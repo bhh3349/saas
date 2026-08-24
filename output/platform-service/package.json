@@ -1,0 +1,45 @@
+{
+  "name": "platform-service",
+  "version": "0.1.0",
+  "description": "餐饮收银 SaaS 平台端服务（激活码 + 店铺主数据）",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typeorm": "typeorm-ts-node-commonjs -d src/data-source.ts",
+    "migration:generate": "typeorm-ts-node-commonjs migration:generate -d src/data-source.ts",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.1",
+    "@nestjs/core": "^11.2.1",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/platform-express": "^11.2.1",
+    "@nestjs/throttler": "^6.5.0",
+    "@nestjs/typeorm": "^11.0.3",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.2.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "dotenv": "^16.4.7",
+    "helmet": "^8.3.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.5",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.7.3"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}

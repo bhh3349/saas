@@ -1,0 +1,27 @@
+{
+  "name": "merchant-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "食刻 · 商户后台 Web 管理后台（设计稿转码）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "antd": "^6.6.1",
+    "dayjs": "^1.11.23",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.6.2",
+    "vite": "^5.4.11",
+    "vite-plugin-compression": "^0.5.1"
+  }
+}

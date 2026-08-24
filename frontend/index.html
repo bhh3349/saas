@@ -1,0 +1,1171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>餐饮收银 SaaS · 平台后台管理系统</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   Design Tokens — Linear Theme (与 Ardot 设计稿变量一一对应)
+   ============================================================ */
+:root{
+  /* 颜色 */
+  --canvas:        #010102;
+  --surface-1:     #0F1012;
+  --surface-2:     #141417;
+  --surface-3:     #171919;
+  --hairline:      #242429;
+  --hairline-strong:#36363B;
+  --ink:           #F7F8F8;
+  --ink-muted:     #D1D6E0;
+  --ink-subtle:    #8A8F99;
+  --ink-tertiary:  #61666E;
+  --primary:       #5E6AD2;
+  --primary-hover: #828FFF;
+  --success:       #26A645;
+  --warning:       #F59E0A;
+  --danger:        #F04545;
+  /* 圆角 */
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px;
+  /* 字体 */
+  --font-sans: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Inter Tight', 'Inter', -apple-system, 'PingFang SC', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  /* 阴影 */
+  --shadow-glow: 0 3px 10px rgba(94,106,210,.35), 0 0 0 1px rgba(94,106,210,.12);
+  --shadow-card: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+  --shadow-modal: 0 24px 64px rgba(0,0,0,.6), 0 4px 16px rgba(0,0,0,.4);
+  /* 动效 */
+  --ease: cubic-bezier(.4,0,.2,1);
+  --ease-out: cubic-bezier(.16,1,.3,1);
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{ animation-duration:.01ms !important; transition-duration:.01ms !important; }
+}
+
+/* ============================================================
+   基础
+   ============================================================ */
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  font-family:var(--font-sans);
+  font-size:14px;
+  color:var(--ink-muted);
+  background:var(--canvas);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+button{ font-family:inherit; border:none; background:none; color:inherit; cursor:pointer; }
+input,select{ font-family:inherit; }
+::selection{ background:rgba(94,106,210,.35); color:#fff; }
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-thumb{ background:#242429; border-radius:8px; border:2px solid var(--canvas); }
+::-webkit-scrollbar-track{ background:transparent; }
+
+.view{ position:fixed; inset:0; }
+.hidden{ display:none !important; }
+
+/* ============================================================
+   登录页
+   ============================================================ */
+.login-view{
+  display:grid; place-items:center;
+  background:var(--canvas);
+  overflow:hidden;
+}
+/* 环境光 */
+.login-view::before{
+  content:""; position:absolute; width:900px; height:900px; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  background:
+    radial-gradient(40% 40% at 35% 30%, rgba(94,106,210,.13), transparent 70%),
+    radial-gradient(35% 35% at 70% 70%, rgba(94,106,210,.08), transparent 70%);
+  filter:blur(10px);
+  pointer-events:none;
+}
+.login-card{
+  position:relative;
+  width:440px; max-width:calc(100vw - 32px);
+  background:var(--surface-1);
+  border:1px solid var(--hairline);
+  border-radius:var(--r-lg);
+  padding:40px 40px 32px;
+  box-shadow:var(--shadow-card), 0 0 80px rgba(94,106,210,.07);
+  animation:cardIn .5s var(--ease-out) both;
+}
+@keyframes cardIn{ from{ opacity:0; transform:translateY(14px) scale(.985);} to{ opacity:1; transform:none;} }
+
+.brand{ display:flex; align-items:center; gap:10px; margin-bottom:32px; }
+.brand-mark{
+  width:34px; height:34px; border-radius:9px;
+  background:linear-gradient(135deg,var(--primary),var(--primary-hover));
+  display:grid; place-items:center; color:#fff;
+  box-shadow:0 2px 8px rgba(94,106,210,.4);
+}
+.brand-mark svg{ width:18px; height:18px; }
+.brand-name{ font-family:var(--font-display); font-weight:600; font-size:16px; color:var(--ink); letter-spacing:.2px; }
+
+.login-title{ font-family:var(--font-display); font-size:22px; font-weight:600; color:var(--ink); letter-spacing:-.2px; }
+.login-sub{ margin-top:6px; font-size:13px; color:var(--ink-subtle); line-height:1.6; }
+.login-error{
+  margin-top:16px; padding:9px 12px; border-radius:var(--r-md);
+  background:rgba(240,69,69,.12); border:1px solid rgba(240,69,69,.25);
+  color:var(--danger); font-size:13px;
+  display:none; align-items:center; gap:8px;
+  animation:shake .35s var(--ease);
+}
+.login-error.show{ display:flex; }
+@keyframes shake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
+
+.form-group{ margin-top:20px; }
+.form-label{ display:block; font-size:12px; font-weight:500; color:var(--ink-subtle); margin-bottom:6px; }
+.input-wrap{ position:relative; }
+.input-icon{ position:absolute; left:12px; top:50%; transform:translateY(-50%); width:16px; height:16px; color:var(--ink-tertiary); pointer-events:none; transition:color .15s var(--ease); }
+.input-wrap:focus-within .input-icon{ color:var(--primary); }
+.input{
+  width:100%; height:40px; padding:0 12px 0 38px;
+  background:var(--surface-2); color:var(--ink);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+  font-size:14px; outline:none;
+  transition:border-color .15s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease);
+}
+.input::placeholder{ color:var(--ink-tertiary); }
+.input:hover{ border-color:var(--hairline-strong); }
+.input:focus{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px rgba(94,106,210,.22);
+  background:var(--surface-2);
+}
+select.input{ appearance:none; padding-right:36px; cursor:pointer;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' fill='none' stroke='%238A8F99' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 12px center;
+}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  height:38px; padding:0 16px;
+  border-radius:var(--r-md); font-size:14px; font-weight:500;
+  transition:background .15s var(--ease), box-shadow .15s var(--ease), border-color .15s var(--ease), transform .1s var(--ease), color .15s var(--ease);
+  white-space:nowrap; user-select:none;
+}
+.btn:active{ transform:scale(.97); }
+.btn:disabled{ opacity:.65; cursor:not-allowed; transform:none; }
+.btn-primary{ background:var(--primary); color:#fff; box-shadow:0 3px 10px rgba(94,106,210,.35); }
+.btn-primary:hover:not(:disabled){ background:var(--primary-hover); box-shadow:0 4px 14px rgba(94,106,210,.5); }
+.btn-danger{ background:var(--danger); color:#fff; }
+.btn-danger:hover:not(:disabled){ background:#ff5a5a; box-shadow:0 4px 14px rgba(240,69,69,.4); }
+.btn-secondary{ background:var(--surface-2); color:var(--ink-muted); border:1px solid var(--hairline); }
+.btn-secondary:hover:not(:disabled){ border-color:var(--hairline-strong); background:var(--surface-3); color:var(--ink); }
+.btn-ghost{ background:transparent; color:var(--primary); }
+.btn-ghost:hover:not(:disabled){ color:var(--primary-hover); background:rgba(94,106,210,.08); }
+.btn-block{ width:100%; height:42px; margin-top:28px; }
+
+.login-btn.loading .btn-label{ display:none; }
+.login-btn.loading{ pointer-events:none; }
+.spinner{ width:16px; height:16px; border:2px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; display:none; }
+.btn.loading .spinner{ display:inline-block; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.login-hint{ margin-top:28px; padding-top:20px; border-top:1px solid var(--hairline); font-size:12px; color:var(--ink-tertiary); display:flex; align-items:center; gap:6px; }
+
+/* ============================================================
+   主框架
+   ============================================================ */
+.app-view{ display:flex; background:var(--canvas); animation:viewIn .35s var(--ease-out) both; }
+@keyframes viewIn{ from{ opacity:0; } to{ opacity:1; } }
+
+/* 侧边栏 */
+.sidebar{
+  width:240px; flex-shrink:0; height:100vh;
+  background:var(--surface-1);
+  border-right:1px solid var(--hairline);
+  display:flex; flex-direction:column;
+}
+.sidebar-logo{
+  height:56px; padding:0 16px; display:flex; align-items:center; gap:10px;
+  border-bottom:1px solid var(--hairline);
+}
+.sidebar-logo .brand-mark{ width:28px; height:28px; border-radius:7px; }
+.sidebar-logo .brand-mark svg{ width:15px; height:15px; }
+.sidebar-logo .brand-name{ font-size:14px; }
+
+.nav{ flex:1; padding:12px 10px; display:flex; flex-direction:column; gap:2px; }
+.nav-item{
+  position:relative; display:flex; align-items:center; gap:10px;
+  height:36px; padding:0 10px; border-radius:var(--r-sm);
+  color:var(--ink-subtle); font-size:14px; font-weight:400;
+  transition:background .15s var(--ease), color .15s var(--ease);
+}
+.nav-item svg{ width:16px; height:16px; flex-shrink:0; color:var(--ink-tertiary); transition:color .15s var(--ease); }
+.nav-item:hover{ background:var(--surface-2); color:var(--ink-muted); }
+.nav-item:hover svg{ color:var(--ink-subtle); }
+.nav-item.active{ background:rgba(94,106,210,.1); color:var(--primary); font-weight:500; }
+.nav-item.active svg{ color:var(--primary); }
+.nav-item.active::before{
+  content:""; position:absolute; left:0; top:50%; transform:translateY(-50%);
+  width:3px; height:18px; border-radius:2px; background:var(--primary);
+  animation:barIn .25s var(--ease-out) both;
+}
+@keyframes barIn{ from{ transform:translateY(-50%) scaleY(0); } to{ transform:translateY(-50%) scaleY(1); } }
+
+.sidebar-footer{ padding:12px 16px; border-top:1px solid var(--hairline); font-size:11px; color:var(--ink-tertiary); line-height:1.6; }
+
+/* 主区域 */
+.main{ flex:1; display:flex; flex-direction:column; height:100vh; min-width:0; }
+.topbar{
+  height:56px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 24px; background:var(--surface-1);
+  border-bottom:1px solid var(--hairline);
+}
+.topbar-title{ font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink); }
+.topbar-right{ display:flex; align-items:center; gap:12px; }
+.topbar-divider{ width:1px; height:20px; background:var(--hairline); }
+.avatar{
+  width:28px; height:28px; border-radius:50%;
+  background:linear-gradient(135deg,#4A5568,#6B7280);
+  display:grid; place-items:center; color:#fff; font-size:11px; font-weight:600;
+  border:1px solid var(--hairline-strong);
+  transition:box-shadow .15s var(--ease);
+}
+.avatar:hover{ box-shadow:0 0 0 3px rgba(94,106,210,.25); }
+.user-name{ font-size:13px; color:var(--ink-muted); }
+
+.content{ flex:1; overflow-y:auto; padding:24px 28px 32px; }
+
+.page{ max-width:1200px; margin:0 auto; animation:pageIn .3s var(--ease-out) both; }
+@keyframes pageIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+
+/* 页面标题 */
+.page-head{ margin-bottom:20px; }
+.page-title{ font-family:var(--font-display); font-size:20px; font-weight:600; color:var(--ink); letter-spacing:-.2px; }
+.page-desc{ margin-top:4px; font-size:13px; color:var(--ink-subtle); }
+
+/* 工具条 */
+.toolbar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-bottom:16px;
+  position:relative; z-index:20;
+}
+.toolbar-spacer{ flex:1; }
+.toolbar .input{ width:200px; }
+.toolbar .input.w-260{ width:260px; }
+.toolbar .input.w-140{ width:140px; }
+
+/* 自定义下拉组件（与 Linear 暗色风格统一） */
+.dd{ position:relative; z-index:10; }
+.dd.open{ z-index:50; }
+.dd-native{ position:absolute; opacity:0; width:1px; height:1px; border:0; padding:0; margin:0; pointer-events:none; }
+.dd-trigger{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  width:100%; height:40px; padding:0 12px;
+  background:var(--surface-2); color:var(--ink);
+  border:1px solid var(--hairline); border-radius:var(--r-md);
+  font-size:14px; outline:none; cursor:pointer; text-align:left; white-space:nowrap;
+  transition:border-color .15s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease);
+}
+.dd-trigger:hover{ border-color:var(--hairline-strong); }
+.dd.open .dd-trigger{ border-color:var(--primary); box-shadow:0 0 0 3px rgba(94,106,210,.22); }
+.dd-chevron{ flex-shrink:0; transition:transform .2s var(--ease); }
+.dd.open .dd-chevron{ transform:rotate(180deg); }
+.dd-panel{
+  position:absolute; top:calc(100% + 4px); left:0; right:0; min-width:100%;
+  background:var(--surface-1); border:1px solid var(--hairline); border-radius:var(--r-md);
+  padding:4px;
+  box-shadow:0 12px 32px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.04);
+  opacity:0; transform:translateY(-6px); pointer-events:none;
+  transition:opacity .2s var(--ease-out), transform .2s var(--ease-out);
+}
+.dd.open .dd-panel{ opacity:1; transform:none; pointer-events:auto; }
+.dd-option{
+  display:flex; align-items:center; width:100%; height:32px; padding:0 12px;
+  background:transparent; border:0; border-radius:var(--r-sm); cursor:pointer;
+  font-size:14px; color:var(--ink); text-align:left; font-family:inherit;
+  transition:background .15s var(--ease), color .15s var(--ease);
+}
+.dd-option:hover{ background:rgba(138,143,153,.12); }
+.dd-option:active{ background:rgba(138,143,153,.18); }
+.dd-option.selected{ background:rgba(94,106,210,.18); color:var(--primary); }
+
+/* 表格 */
+.table-card{
+  background:var(--surface-1);
+  border:1px solid var(--hairline);
+  border-radius:var(--r-lg);
+  overflow:hidden;
+  box-shadow:var(--shadow-card);
+}
+.table{ width:100%; border-collapse:collapse; }
+.table thead th{
+  height:44px; padding:0 16px; text-align:left;
+  font-size:12px; font-weight:500; color:var(--ink-subtle);
+  background:var(--surface-2);
+  border-bottom:1px solid var(--hairline);
+  white-space:nowrap; user-select:none;
+}
+.table tbody td{
+  height:48px; padding:0 16px;
+  font-size:14px; color:var(--ink-muted);
+  border-bottom:1px solid var(--hairline);
+  white-space:nowrap;
+}
+.table tbody tr{ transition:background .15s var(--ease); }
+.table tbody tr:hover{ background:rgba(255,255,255,.025); }
+.table tbody tr:last-child td{ border-bottom:none; }
+.cell-strong{ font-weight:500; color:var(--ink); }
+.cell-mono{ font-family:var(--font-mono); font-size:13px; letter-spacing:.2px; }
+.cell-dim{ color:var(--ink-tertiary); }
+.cell-action{ font-size:13px; font-weight:500; cursor:pointer; user-select:none; transition:color .15s var(--ease), opacity .15s var(--ease); }
+.action-danger{ color:var(--danger); }
+.action-danger:hover{ text-decoration:underline; color:#ff5a5a; }
+.action-ok{ color:var(--primary); }
+.action-ok:hover{ text-decoration:underline; color:var(--primary-hover); }
+.action-muted{ color:var(--ink-tertiary); pointer-events:none; }
+
+/* 状态标签 */
+.tag{
+  display:inline-flex; align-items:center; gap:6px;
+  height:22px; padding:0 8px; border-radius:9999px;
+  font-size:12px; font-weight:500; line-height:1;
+}
+.tag .dot{ width:5px; height:5px; border-radius:50%; }
+.tag-success{ background:rgba(38,166,69,.13); color:#3BB05A; }
+.tag-success .dot{ background:var(--success); }
+.tag-primary{ background:rgba(94,106,210,.14); color:#7E8CF0; }
+.tag-primary .dot{ background:var(--primary); }
+.tag-danger{ background:rgba(240,69,69,.12); color:var(--danger); }
+.tag-danger .dot{ background:var(--danger); }
+.tag-muted{ background:rgba(138,143,153,.12); color:var(--ink-subtle); }
+.tag-muted .dot{ background:var(--ink-tertiary); }
+.tag-warning{ background:rgba(245,158,10,.13); color:#F5A623; }
+.tag-warning .dot{ background:var(--warning); }
+
+/* 分页 */
+.pagination{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 4px 0;
+}
+.page-info{ font-size:12px; color:var(--ink-tertiary); }
+.pager{ display:flex; align-items:center; gap:6px; }
+.pager-btn{
+  min-width:32px; height:32px; padding:0 6px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:var(--surface-2); color:var(--ink-muted);
+  border:1px solid var(--hairline); border-radius:var(--r-sm);
+  font-size:12px; transition:all .15s var(--ease);
+}
+.pager-btn:hover:not(:disabled){ border-color:var(--hairline-strong); background:var(--surface-3); color:var(--ink); }
+.pager-btn.active{ background:var(--primary); border-color:var(--primary); color:#fff; box-shadow:0 2px 8px rgba(94,106,210,.35); }
+.pager-btn:disabled{ opacity:.4; cursor:not-allowed; }
+.pager-ellipsis{ color:var(--ink-tertiary); padding:0 2px; font-size:13px; }
+
+/* 表格骨架屏（加载态） */
+.skeleton-row{ display:flex; align-items:center; gap:16px; height:48px; padding:0 16px; border-bottom:1px solid var(--hairline); }
+.skeleton-row:last-child{ border-bottom:none; }
+.skeleton-bar{ height:12px; border-radius:4px; background:var(--surface-3); position:relative; overflow:hidden; }
+.skeleton-bar::after{
+  content:""; position:absolute; inset:0;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);
+  animation:skeleton 1.4s ease infinite;
+}
+@keyframes skeleton{ from{ transform:translateX(-100%);} to{ transform:translateX(100%);} }
+.table-loading{ display:none; }
+.table-loading.show{ display:block; }
+.table-wrap{ position:relative; }
+.table-wrap table{ display:table; }
+.table-wrap.table-busy table{ opacity:.25; filter:saturate(.6); }
+.table-wrap.table-busy .table-loading{ display:block; position:absolute; inset:0; background:rgba(15,16,18,.5); backdrop-filter:blur(1px);   z-index:2; }
+
+/* ============================================================
+   弹窗
+   ============================================================ */
+.modal-backdrop{
+  position:fixed; inset:0; z-index:100;
+  background:rgba(0,0,0,.62);
+  backdrop-filter:blur(3px);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition:opacity .2s var(--ease);
+}
+.modal-backdrop.open{ opacity:1; pointer-events:auto; }
+.modal{
+  width:440px; max-width:calc(100vw - 32px);
+  background:var(--surface-1);
+  border:1px solid var(--hairline-strong);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow-modal);
+  overflow:hidden;
+  transform:scale(.96) translateY(8px); opacity:0;
+  transition:transform .2s var(--ease-out), opacity .2s var(--ease);
+}
+.modal-backdrop.open .modal{ transform:none; opacity:1; }
+.modal-sm{ width:400px; }
+.modal-header{
+  display:flex; align-items:center; justify-content:space-between;
+  height:56px; padding:0 16px 0 24px;
+}
+.modal-title{ font-family:var(--font-display); font-size:16px; font-weight:600; color:var(--ink); }
+.modal-close{
+  width:28px; height:28px; border-radius:var(--r-sm);
+  display:grid; place-items:center; color:var(--ink-tertiary);
+  transition:background .15s var(--ease), color .15s var(--ease);
+}
+.modal-close:hover{ background:var(--surface-2); color:var(--ink-muted); }
+.modal-close svg{ width:14px; height:14px; }
+.modal-divider{ height:1px; background:var(--hairline); }
+.modal-body{ padding:24px; }
+.modal-body .form-group{ margin-top:0; }
+.modal-body .form-group + .form-group{ margin-top:20px; }
+.modal-footer{
+  display:flex; justify-content:flex-end; gap:12px;
+  padding:0 24px 24px;
+}
+
+/* 确认弹窗 */
+.confirm-icon{
+  width:40px; height:40px; border-radius:50%;
+  background:rgba(240,69,69,.13);
+  display:grid; place-items:center;
+  margin:4px auto 16px;
+  animation:iconPop .3s var(--ease-out) both;
+}
+@keyframes iconPop{ from{ transform:scale(.6); opacity:0;} to{ transform:none; opacity:1;} }
+.confirm-icon svg{ width:20px; height:20px; color:var(--danger); }
+.confirm-desc{ text-align:center; font-size:14px; color:var(--ink-muted); line-height:1.75; }
+.confirm-desc strong{ color:var(--ink); font-weight:500; }
+.confirm-warn{
+  margin-top:16px; padding:10px 14px; border-radius:var(--r-md);
+  background:rgba(240,69,69,.08); border:1px solid rgba(240,69,69,.18);
+  font-size:13px; color:var(--danger); line-height:1.7; text-align:left;
+}
+.confirm-hint{ margin-top:12px; font-size:12px; color:var(--ink-tertiary); text-align:center; }
+
+/* 表单行内提示 */
+.field-error{ margin-top:6px; font-size:12px; color:var(--danger); display:none; }
+.field-error.show{ display:block; animation:shake .35s var(--ease); }
+.input.has-error{ border-color:var(--danger); box-shadow:0 0 0 3px rgba(240,69,69,.18); }
+
+/* ============================================================
+   状态演示页
+   ============================================================ */
+.states-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px; }
+.state-card{
+  background:var(--surface-1); border:1px solid var(--hairline);
+  border-radius:var(--r-lg); padding:40px 24px;
+  display:flex; flex-direction:column; align-items:center; gap:12px; text-align:center;
+  box-shadow:var(--shadow-card);
+}
+.state-card .sc-icon{ display:grid; place-items:center; }
+.state-card .sc-title{ font-family:var(--font-display); font-size:15px; font-weight:600; color:var(--ink); }
+.state-card .sc-desc{ font-size:13px; color:var(--ink-subtle); line-height:1.7; max-width:280px; }
+.state-card .sc-action{ margin-top:8px; }
+.spin-path{ animation:spin 1s linear infinite; transform-origin:center; }
+.state-tag{ align-self:flex-start; font-size:11px; font-weight:500; color:var(--ink-tertiary); text-transform:uppercase; letter-spacing:.6px; }
+
+/* toast */
+.toast{
+  position:fixed; top:20px; left:50%; transform:translate(-50%,-16px);
+  background:var(--surface-2); border:1px solid var(--hairline-strong);
+  color:var(--ink); font-size:13px; font-weight:500;
+  padding:10px 18px; border-radius:var(--r-md);
+  box-shadow:var(--shadow-modal); z-index:200;
+  opacity:0; pointer-events:none; transition:all .25s var(--ease-out);
+  display:flex; align-items:center; gap:8px;
+}
+.toast.show{ opacity:1; transform:translate(-50%,0); }
+.toast svg{ width:16px; height:16px; color:var(--success); flex-shrink:0; }
+</style>
+</head>
+<body>
+
+<!-- ==================== 登录页 ==================== -->
+<div class="view login-view" id="loginView">
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
+      </div>
+      <span class="brand-name">收银云 · 平台后台</span>
+    </div>
+    <h1 class="login-title">登录管理后台</h1>
+    <p class="login-sub">激活码与店铺的集中管理控制台</p>
+
+    <div class="login-error" id="loginError">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6.5"/><path d="M8 5V8.5M8 10.5V10.51"/></svg>
+      <span>账号或密码错误，请重新输入</span>
+    </div>
+
+    <form id="loginForm" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="username">账号</label>
+        <div class="input-wrap">
+          <svg class="input-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="5.2" r="3"/><path d="M2.5 14C3.5 11.5 5.5 10.3 8 10.3C10.5 10.3 12.5 11.5 13.5 14"/></svg>
+          <input class="input" id="username" type="text" placeholder="请输入管理员账号" autocomplete="username" value="admin">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="password">密码</label>
+        <div class="input-wrap">
+          <svg class="input-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6.5" width="10" height="7" rx="2"/><path d="M5.5 6.5V4.5a2.5 2.5 0 0 1 5 0v2"/></svg>
+          <input class="input" id="password" type="password" placeholder="请输入密码" autocomplete="current-password" value="123456">
+        </div>
+      </div>
+      <button class="btn btn-primary btn-block login-btn" id="loginBtn" type="submit">
+        <span class="spinner"></span>
+        <span class="btn-label">登 录</span>
+      </button>
+    </form>
+
+    <div class="login-hint">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6.5"/><path d="M8 7.2V11M8 5V5.01"/></svg>
+      演示环境 · 默认账号 admin / 123456
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 主框架 ==================== -->
+<div class="view app-view hidden" id="appView">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
+      </div>
+      <span class="brand-name">收银云 · 平台后台</span>
+    </div>
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-page="codes">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="4" width="11" height="9" rx="1.5"/><path d="M5 2.5h6M5.5 7h5M5.5 9.5h3"/></svg>
+        激活码管理
+      </button>
+      <button class="nav-item" data-page="shops">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 6.5L4 3h8l1.5 3.5M2.5 6.5V12a1.5 1.5 0 0 0 1.5 1.5h8A1.5 1.5 0 0 0 13.5 12V6.5M2.5 6.5h11"/><circle cx="6" cy="9.5" r="1"/><circle cx="10" cy="9.5" r="1"/></svg>
+        店铺管理
+      </button>
+      <button class="nav-item" data-page="states">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M6.5 6.5h3v3h-3z"/></svg>
+        状态演示
+      </button>
+    </nav>
+    <div class="sidebar-footer">Platform Admin v0.1<br>© 2026 收银云</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="topbarTitle">激活码管理</div>
+      <div class="topbar-right">
+        <button class="btn btn-secondary" style="height:32px;font-size:13px;padding:0 12px;" onclick="toast('文档已导出（演示）')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2V10.5M8 10.5L5 7.5M8 10.5L11 7.5"/><path d="M2.5 11.5V13A1.5 1.5 0 0 0 4 14.5h8A1.5 1.5 0 0 0 13.5 13v-1.5"/></svg>
+          导出
+        </button>
+        <div class="topbar-divider"></div>
+        <div class="avatar">管</div>
+        <span class="user-name">管理员</span>
+      </div>
+    </header>
+
+    <main class="content" id="content">
+      <!-- 激活码管理 -->
+      <section class="page" id="page-codes">
+        <div class="page-head">
+          <h2 class="page-title">激活码管理</h2>
+          <p class="page-desc">管理 POS 收银终端的激活码，支持批量生成、作废与查询</p>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn btn-primary" id="openBatchModal">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>
+            批量生成
+          </button>
+          <button class="btn btn-secondary" onclick="toast('已导出当前筛选结果（演示）')">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2V10.5M8 10.5L5 7.5M8 10.5L11 7.5"/><path d="M2.5 11.5V13A1.5 1.5 0 0 0 4 14.5h8A1.5 1.5 0 0 0 13.5 13v-1.5"/></svg>
+            导出
+          </button>
+          <div class="toolbar-spacer"></div>
+          <input class="input w-200" id="codeBatchFilter" type="text" placeholder="批次号，如 BATCH001">
+          <div class="dd w-140" id="codeStatusDD">
+            <select id="codeStatusFilter" class="dd-native" tabindex="-1" aria-hidden="true">
+              <option value="">全部状态</option>
+              <option value="unused">未使用</option>
+              <option value="bound">已绑定</option>
+              <option value="voided">已作废</option>
+            </select>
+            <button class="dd-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="dd-label">全部状态</span>
+              <svg class="dd-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="#8A8F99" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="dd-panel" role="listbox">
+              <button class="dd-option selected" type="button" role="option" data-value="">全部状态</button>
+              <button class="dd-option" type="button" role="option" data-value="unused">未使用</button>
+              <button class="dd-option" type="button" role="option" data-value="bound">已绑定</button>
+              <button class="dd-option" type="button" role="option" data-value="voided">已作废</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="filterCodes()">查询</button>
+          <button class="btn btn-ghost" onclick="resetCodes()">重置</button>
+        </div>
+
+        <div class="table-card">
+          <div class="table-wrap" id="codesTableWrap">
+            <div class="table-loading" id="codesLoading">
+              <div style="padding:8px 0;">
+                <div class="skeleton-row"><div class="skeleton-bar" style="width:170px"></div><div class="skeleton-bar" style="width:80px"></div><div class="skeleton-bar" style="width:70px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:130px"></div><div class="skeleton-bar" style="width:50px"></div></div>
+                <div class="skeleton-row"><div class="skeleton-bar" style="width:170px"></div><div class="skeleton-bar" style="width:80px"></div><div class="skeleton-bar" style="width:70px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:130px"></div><div class="skeleton-bar" style="width:50px"></div></div>
+                <div class="skeleton-row"><div class="skeleton-bar" style="width:170px"></div><div class="skeleton-bar" style="width:80px"></div><div class="skeleton-bar" style="width:70px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:130px"></div><div class="skeleton-bar" style="width:50px"></div></div>
+                <div class="skeleton-row"><div class="skeleton-bar" style="width:170px"></div><div class="skeleton-bar" style="width:80px"></div><div class="skeleton-bar" style="width:70px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:120px"></div><div class="skeleton-bar" style="width:130px"></div><div class="skeleton-bar" style="width:50px"></div></div>
+              </div>
+            </div>
+            <table class="table" id="codesTable">
+              <thead>
+                <tr>
+                  <th style="width:170px">激活码</th>
+                  <th style="width:90px">批次号</th>
+                  <th style="width:90px">状态</th>
+                  <th style="width:150px">绑定店铺</th>
+                  <th style="width:130px">绑定时间</th>
+                  <th style="width:140px">创建时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="codesTbody"></tbody>
+            </table>
+            <div class="empty-inline hidden" id="codesEmpty">
+              <div style="padding:56px 0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;">
+                <svg width="44" height="44" viewBox="0 0 64 64" fill="none" stroke="#61666E" stroke-width="2"><rect x="12" y="16" width="40" height="36" rx="4"/><path d="M20 32H44M20 40H36"/></svg>
+                <div style="font-size:15px;font-weight:600;color:var(--ink);">暂无激活码</div>
+                <div style="font-size:13px;color:var(--ink-subtle);">当前筛选条件下没有数据，尝试调整批次号或状态</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pagination">
+          <span class="page-info" id="codesPageInfo">共 128 条记录 · 第 1 / 32 页</span>
+          <div class="pager" id="codesPager"></div>
+        </div>
+      </section>
+
+      <!-- 店铺管理 -->
+      <section class="page hidden" id="page-shops">
+        <div class="page-head">
+          <h2 class="page-title">店铺管理</h2>
+          <p class="page-desc">管理已激活的收银店铺，支持停用 / 启用与搜索</p>
+        </div>
+
+        <div class="toolbar">
+          <input class="input w-260" id="shopSearch" type="text" placeholder="搜索店铺名 / 手机号">
+          <div class="dd w-140" id="shopStatusDD">
+            <select id="shopStatusFilter" class="dd-native" tabindex="-1" aria-hidden="true">
+              <option value="">全部状态</option>
+              <option value="active">正常</option>
+              <option value="disabled">已停用</option>
+            </select>
+            <button class="dd-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="dd-label">全部状态</span>
+              <svg class="dd-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="#8A8F99" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="dd-panel" role="listbox">
+              <button class="dd-option selected" type="button" role="option" data-value="">全部状态</button>
+              <button class="dd-option" type="button" role="option" data-value="active">正常</button>
+              <button class="dd-option" type="button" role="option" data-value="disabled">已停用</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="filterShops()">查询</button>
+          <button class="btn btn-ghost" onclick="resetShops()">重置</button>
+        </div>
+
+        <div class="table-card">
+          <table class="table" id="shopsTable">
+            <thead>
+              <tr>
+                <th style="width:220px">店铺名称</th>
+                <th style="width:80px">联系人</th>
+                <th style="width:130px">联系方式</th>
+                <th style="width:160px">激活码</th>
+                <th style="width:140px">注册时间</th>
+                <th style="width:90px">状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="shopsTbody"></tbody>
+          </table>
+        </div>
+
+        <div class="pagination">
+          <span class="page-info">共 24 条记录 · 第 1 / 2 页</span>
+          <div class="pager">
+            <button class="pager-btn" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8L10 12"/></svg></button>
+            <button class="pager-btn active">1</button>
+            <button class="pager-btn">2</button>
+            <button class="pager-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4L10 8L6 12"/></svg></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 状态演示 -->
+      <section class="page hidden" id="page-states">
+        <div class="page-head">
+          <h2 class="page-title">表格状态演示</h2>
+          <p class="page-desc">空态 · 加载态 · 错误态 —— 与真实页面共用同一套设计语言</p>
+        </div>
+        <div class="states-grid">
+          <div class="state-card">
+            <span class="state-tag">Empty · 空态</span>
+            <div class="sc-icon">
+              <svg width="48" height="48" viewBox="0 0 64 64" fill="none" stroke="#61666E" stroke-width="2"><rect x="12" y="16" width="40" height="36" rx="4"/><path d="M20 32H44M20 40H36"/></svg>
+            </div>
+            <div class="sc-title">暂无激活码</div>
+            <div class="sc-desc">当前筛选条件下没有数据，尝试调整批次号或状态</div>
+            <div class="sc-action"><button class="btn btn-ghost" onclick="resetCodes();switchPage('codes')">去重置筛选</button></div>
+          </div>
+          <div class="state-card">
+            <span class="state-tag">Loading · 加载态</span>
+            <div class="sc-icon">
+              <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
+                <circle cx="22" cy="22" r="18" stroke="#242429" stroke-width="4"/>
+                <path class="spin-path" d="M22 4C30.8366 4 38 11.1634 38 20" stroke="#5E6AD2" stroke-width="4" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="sc-title">数据加载中…</div>
+            <div class="sc-desc">请求正在处理，界面保持稳定，避免布局跳动</div>
+          </div>
+          <div class="state-card">
+            <span class="state-tag">Error · 错误态</span>
+            <div class="sc-icon">
+              <svg width="44" height="44" viewBox="0 0 48 48" fill="none" stroke="#F04545" stroke-width="2"><circle cx="24" cy="24" r="21"/><path d="M24 13V28M24 33.5V33.51" stroke-linecap="round"/></svg>
+            </div>
+            <div class="sc-title">加载数据失败</div>
+            <div class="sc-desc">无法获取激活码列表，请检查网络后重试</div>
+            <div class="sc-action"><button class="btn btn-secondary" onclick="toast('已重新请求（演示）')">重新加载</button></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ==================== 批量生成弹窗 ==================== -->
+<div class="modal-backdrop" id="batchModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="batchTitle">
+    <div class="modal-header">
+      <span class="modal-title" id="batchTitle">批量生成激活码</span>
+      <button class="modal-close" onclick="closeModal('batchModal')">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3L11 11M11 3L3 11"/></svg>
+      </button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="genQty">生成数量 *</label>
+        <input class="input" id="genQty" type="number" min="1" max="1000" placeholder="请输入 1-1000 之间的数字">
+        <div class="field-error" id="genQtyErr">请输入 1-1000 之间的数字</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="genBatch">批次号</label>
+        <input class="input" id="genBatch" type="text" placeholder="如 BATCH2026">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="genPrefix">激活码前缀</label>
+        <input class="input" id="genPrefix" type="text" placeholder="仅大写字母、数字，如 POS">
+        <div class="field-error" id="genPrefixErr">前缀仅支持大写字母与数字，2-6 位</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('batchModal')">取消</button>
+      <button class="btn btn-primary" id="genSubmitBtn" onclick="submitBatch()">
+        <span class="spinner"></span>
+        <span class="btn-label">立即生成</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== 停用/作废确认弹窗 ==================== -->
+<div class="modal-backdrop" id="confirmModal">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal-header">
+      <span class="modal-title" id="confirmTitle">确认停用店铺</span>
+      <button class="modal-close" onclick="closeModal('confirmModal')">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3L11 11M11 3L3 11"/></svg>
+      </button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="confirm-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 6V15M12 18.5V18.51"/></svg>
+      </div>
+      <p class="confirm-desc" id="confirmDesc">确认停用店铺「<strong>湘里人家·五道口店</strong>」？</p>
+      <div class="confirm-warn" id="confirmWarn">停用后该店所有员工无法登录、无法使用收银业务（立即生效）。</div>
+      <p class="confirm-hint">你可随时重新启用该店铺。</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('confirmModal')">取消</button>
+      <button class="btn btn-danger" id="confirmOkBtn" onclick="confirmAction()">
+        <span class="spinner" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;"></span>
+        <span class="btn-label">确认停用</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- toast -->
+<div class="toast" id="toast">
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5L6 12L13.5 4.5"/></svg>
+  <span id="toastText">操作成功</span>
+</div>
+
+<script>
+/* ============================================================
+   数据（演示数据，结构与后端接口字段一致）
+   ============================================================ */
+const STATUS = {
+  unused:  { label:'未使用', cls:'tag-success' },
+  bound:   { label:'已绑定', cls:'tag-primary' },
+  voided:  { label:'已作废', cls:'tag-muted' },
+  active:  { label:'正常',   cls:'tag-success' },
+  disabled:{ label:'已停用', cls:'tag-danger' },
+};
+
+let codesData = [
+  { code:'POS-8K3F-2M9Q', batch:'BATCH001', status:'unused', shop:'—', bindAt:'—',    createdAt:'2024-03-15 10:30' },
+  { code:'POS-9X2A-7B5N', batch:'BATCH001', status:'bound',  shop:'城市厨房·中关村店', bindAt:'2024-03-14 15:20', createdAt:'2024-03-14 15:20' },
+  { code:'POS-4R8T-1Y6U', batch:'BATCH002', status:'unused', shop:'—', bindAt:'—',    createdAt:'2024-04-05 09:12' },
+  { code:'POS-6M1P-3K8L', batch:'BATCH002', status:'voided', shop:'—', bindAt:'—',    createdAt:'2024-04-05 09:15' },
+  { code:'POS-2K5M-8Q7R', batch:'BATCH003', status:'bound',  shop:'悦享餐厅·望京店', bindAt:'2024-04-02 14:15', createdAt:'2024-04-01 10:00' },
+  { code:'POS-7F3N-4H8S', batch:'BATCH003', status:'bound',  shop:'湘里人家·五道口店', bindAt:'2024-04-18 09:05', createdAt:'2024-04-18 09:05' },
+  { code:'POS-5D9E-1X2C', batch:'BATCH004', status:'unused', shop:'—', bindAt:'—',    createdAt:'2024-05-11 16:22' },
+  { code:'POS-3H6J-9P0L', batch:'BATCH004', status:'voided', shop:'—', bindAt:'—',    createdAt:'2024-05-11 16:40' },
+];
+
+let shopsData = [
+  { name:'城市厨房·中关村店', contact:'张伟', phone:'138****2234', code:'POS-9X2A-7B5N', regAt:'2024-03-14 15:20', status:'active' },
+  { name:'悦享餐厅·望京店',   contact:'李娜', phone:'139****8842', code:'POS-2K5M-8Q7R', regAt:'2024-04-02 14:15', status:'active' },
+  { name:'湘里人家·五道口店', contact:'王强', phone:'137****9910', code:'POS-7F3N-4H8S', regAt:'2024-04-18 09:05', status:'disabled' },
+  { name:'老灶火锅·国贸店',   contact:'陈静', phone:'136****5567', code:'—',            regAt:'2024-05-21 16:40', status:'active' },
+];
+
+/* ============================================================
+   工具
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function tagRow(status, type){ const s = STATUS[status]; return `<span class="tag ${s.cls}"><span class="dot"></span>${s.label}</span>`; }
+let toastTimer;
+function toast(msg){
+  $('#toastText').textContent = msg;
+  $('#toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=> $('#toast').classList.remove('show'), 2200);
+}
+
+/* ============================================================
+   登录
+   ============================================================ */
+$('#loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const btn = $('#loginBtn');
+  const user = $('#username').value.trim(), pass = $('#password').value;
+  $('#loginError').classList.remove('show');
+  if(!user || !pass){
+    showLoginError('请输入账号与密码'); return;
+  }
+  btn.classList.add('loading');
+  // 模拟接口 /auth/login（演示：admin / 123456）
+  setTimeout(() => {
+    if(user === 'admin' && pass === '123456'){
+      $('#loginView').style.transition = 'opacity .25s ease';
+      $('#loginView').style.opacity = '0';
+      setTimeout(() => {
+        $('#loginView').classList.add('hidden');
+        $('#loginView').style.opacity = '';
+        $('#appView').classList.remove('hidden');
+        toast('登录成功，欢迎回来');
+      }, 250);
+    } else {
+      btn.classList.remove('loading');
+      showLoginError('账号或密码错误，请重新输入');
+    }
+  }, 900);
+});
+function showLoginError(msg){
+  $('#loginError').querySelector('span').textContent = msg;
+  $('#loginError').classList.add('show');
+}
+
+/* ============================================================
+   导航切换
+   ============================================================ */
+const pageTitles = { codes:'激活码管理', shops:'店铺管理', states:'状态演示' };
+function switchPage(name){
+  $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+  ['codes','shops','states'].forEach(p => {
+    $('#page-' + p).classList.toggle('hidden', p !== name);
+  });
+  $('#topbarTitle').textContent = pageTitles[name];
+  // 每次切换重放入场动画
+  const page = $('#page-' + name);
+  page.style.animation = 'none'; void page.offsetWidth;
+  page.style.animation = '';
+}
+$$('.nav-item').forEach(b => b.addEventListener('click', () => switchPage(b.dataset.page)));
+
+/* ============================================================
+   激活码表格渲染
+   ============================================================ */
+function renderCodes(){
+  $('#codesTbody').innerHTML = codesData.map(c => `
+    <tr>
+      <td class="cell-mono cell-strong">${esc(c.code)}</td>
+      <td><span class="cell-dim">${esc(c.batch)}</span></td>
+      <td>${tagRow(c.status)}</td>
+      <td>${c.status === 'bound' ? `<span class="cell-strong">${esc(c.shop)}</span>` : '<span class="cell-dim">—</span>'}</td>
+      <td>${c.status === 'bound' ? `<span class="cell-dim">${esc(c.bindAt)}</span>` : '<span class="cell-dim">—</span>'}</td>
+      <td><span class="cell-dim">${esc(c.createdAt)}</span></td>
+      <td>${c.status === 'voided'
+        ? '<span class="action-muted">已作废</span>'
+        : `<span class="cell-action action-danger" onclick="askVoid('${esc(c.code)}')">作废</span>`}
+      </td>
+    </tr>`).join('');
+  const empty = $('#codesEmpty');
+  const table = $('#codesTable');
+  empty.classList.toggle('hidden', codesData.length > 0);
+  table.style.display = codesData.length ? '' : 'none';
+  $('#codesPageInfo').textContent = codesData.length
+    ? `共 ${codesData.length * 16} 条记录 · 第 1 / ${Math.max(1, Math.ceil(codesData.length / 4))} 页`
+    : '共 0 条记录';
+  buildPager();
+}
+function buildPager(){
+  const total = Math.max(1, Math.ceil(codesData.length / 4));
+  const wrap = $('#codesPager');
+  let html = `<button class="pager-btn" disabled><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4L6 8L10 12"/></svg></button>
+              <button class="pager-btn active">1</button>`;
+  if(total > 2){
+    if(total > 5){ html += `<span class="pager-ellipsis">…</span><button class="pager-btn">${total}</button>`; }
+    else { for(let i=2;i<=total;i++) html += `<button class="pager-btn">${i}</button>`; }
+  }
+  html += `<button class="pager-btn"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4L10 8L6 12"/></svg></button>`;
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.pager-btn').forEach((b, i, arr) => {
+    b.addEventListener('click', () => {
+      wrap.querySelectorAll('.pager-btn').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      if(!b.querySelector('svg') && b.textContent !== total) toast(`已跳转至第 ${b.textContent} 页（演示）`);
+    });
+  });
+}
+
+/* ============================================================
+   自定义下拉组件（UI 与 Linear 风格统一，数据仍走原生 select）
+   ============================================================ */
+function initDD(selectId){
+  const native = $('#' + selectId);
+  const wrap = native.closest('.dd');
+  const trigger = wrap.querySelector('.dd-trigger');
+  const label = wrap.querySelector('.dd-label');
+  const opts = wrap.querySelectorAll('.dd-option');
+  const setVal = v => {
+    native.value = v;
+    opts.forEach(o => o.classList.toggle('selected', o.dataset.value === v));
+    const sel = wrap.querySelector('.dd-option.selected');
+    if(sel) label.textContent = sel.textContent;
+  };
+  trigger.addEventListener('click', e => {
+    e.stopPropagation();
+    const willOpen = !wrap.classList.contains('open');
+    closeAllDD();
+    if(willOpen){ wrap.classList.add('open'); trigger.setAttribute('aria-expanded','true'); }
+  });
+  opts.forEach(o => o.addEventListener('click', e => {
+    e.stopPropagation();
+    setVal(o.dataset.value);
+    wrap.classList.remove('open');
+    trigger.setAttribute('aria-expanded','false');
+  }));
+  return { set: setVal };
+}
+function closeAllDD(){
+  $$('.dd.open').forEach(d => {
+    d.classList.remove('open');
+    d.querySelector('.dd-trigger').setAttribute('aria-expanded','false');
+  });
+}
+document.addEventListener('click', closeAllDD);
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closeAllDD(); });
+/* 重置时同步下拉 label（原生 select value 已被清空） */
+function syncDD(selectId){
+  const native = $('#' + selectId);
+  const wrap = native.closest('.dd');
+  const label = wrap.querySelector('.dd-label');
+  const opts = wrap.querySelectorAll('.dd-option');
+  opts.forEach(o => o.classList.toggle('selected', o.dataset.value === native.value));
+  const sel = wrap.querySelector('.dd-option.selected');
+  if(sel) label.textContent = sel.textContent;
+}
+
+/* 筛选（模拟 /admin/codes?batch=&status=） */
+function filterCodes(){
+  const wrap = $('#codesTableWrap');
+  wrap.classList.add('table-busy');
+  setTimeout(() => {
+    const batch = $('#codeBatchFilter').value.trim().toUpperCase();
+    const status = $('#codeStatusFilter').value;
+    codesData = BASE_CODES.filter(c =>
+      (!batch || c.batch.toUpperCase().includes(batch)) &&
+      (!status || c.status === status)
+    );
+    wrap.classList.remove('table-busy');
+    renderCodes();
+    if(codesData.length) toast(`查询完成，共 ${codesData.length} 条结果`);
+  }, 600);
+}
+function resetCodes(){
+  $('#codeBatchFilter').value = ''; $('#codeStatusFilter').value = '';
+  syncDD('codeStatusFilter');
+  codesData = [...BASE_CODES];
+  renderCodes();
+}
+const BASE_CODES = [...codesData];
+
+/* ============================================================
+   店铺表格渲染
+   ============================================================ */
+function renderShops(){
+  $('#shopsTbody').innerHTML = shopsData.map(s => `
+    <tr>
+      <td class="cell-strong">${esc(s.name)}</td>
+      <td>${esc(s.contact)}</td>
+      <td class="cell-mono" style="font-size:13px;">${esc(s.phone)}</td>
+      <td class="cell-mono" style="font-size:13px;">${esc(s.code)}</td>
+      <td><span class="cell-dim">${esc(s.regAt)}</span></td>
+      <td>${tagRow(s.status)}</td>
+      <td>${s.status === 'disabled'
+        ? `<span class="cell-action action-ok" onclick="askToggleShop('${esc(s.name)}','enable')">启用</span>`
+        : `<span class="cell-action action-danger" onclick="askToggleShop('${esc(s.name)}','disable')">停用</span>`}
+      </td>
+    </tr>`).join('');
+}
+function filterShops(){
+  const kw = $('#shopSearch').value.trim().toLowerCase();
+  const st = $('#shopStatusFilter').value;
+  shopsData = BASE_SHOPS.filter(s =>
+    (!kw || s.name.toLowerCase().includes(kw) || s.phone.includes(kw)) &&
+    (!st || s.status === st)
+  );
+  renderShops();
+  if(shopsData.length) toast(`查询完成，共 ${shopsData.length} 条结果`);
+}
+function resetShops(){
+  $('#shopSearch').value = ''; $('#shopStatusFilter').value = '';
+  syncDD('shopStatusFilter');
+  shopsData = [...BASE_SHOPS]; renderShops();
+}
+const BASE_SHOPS = [...shopsData];
+
+/* ============================================================
+   弹窗
+   ============================================================ */
+function openModal(id){ $('#' + id).classList.add('open'); }
+function closeModal(id){
+  const m = $('#' + id);
+  m.classList.remove('open');
+  if(id === 'batchModal'){ $('#genSubmitBtn').classList.remove('loading'); clearFieldErrors(); }
+}
+$$('.modal-backdrop').forEach(bd => {
+  bd.addEventListener('mousedown', e => { if(e.target === bd) closeModal(bd.id); });
+});
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){ closeModal('batchModal'); closeModal('confirmModal'); }
+});
+
+/* 批量生成 */
+$('#openBatchModal').addEventListener('click', () => { clearFieldErrors(); openModal('batchModal'); });
+function clearFieldErrors(){
+  $$('.input.has-error').forEach(i => i.classList.remove('has-error'));
+  $$('.field-error').forEach(f => f.classList.remove('show'));
+}
+function setFieldError(inputId, errId){
+  $('#' + inputId).classList.add('has-error');
+  $('#' + errId).classList.add('show');
+}
+function submitBatch(){
+  const qty = parseInt($('#genQty').value, 10);
+  const batch = $('#genBatch').value.trim();
+  const prefix = $('#genPrefix').value.trim().toUpperCase();
+  clearFieldErrors();
+  let ok = true;
+  if(!qty || qty < 1 || qty > 1000){ setFieldError('genQty','genQtyErr'); ok = false; }
+  if(prefix && !/^[A-Z0-9]{2,6}$/.test(prefix)){ setFieldError('genPrefix','genPrefixErr'); ok = false; }
+  if(!ok) return;
+  const btn = $('#genSubmitBtn');
+  btn.classList.add('loading');
+  // 模拟 /admin/codes/generate
+  setTimeout(() => {
+    const gen = [];
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for(let i = 0; i < Math.min(qty, 8); i++){
+      let r = '';
+      for(let k = 0; k < 4; k++) r += alphabet[Math.floor(Math.random() * alphabet.length)];
+      gen.push({ code:`${prefix || 'POS'}-${r}-${r.split('').reverse().join('')}`, batch:batch || 'BATCH' + new Date().getFullYear(), status:'unused', shop:'—', bindAt:'—', createdAt:'2026-08-21 14:30' });
+    }
+    codesData = [...gen, ...BASE_CODES];
+    btn.classList.remove('loading');
+    closeModal('batchModal');
+    renderCodes();
+    toast(`已生成 ${qty} 个激活码`);
+  }, 800);
+}
+
+/* 作废 / 停用确认 */
+let confirmCtx = null;
+function askVoid(code){
+  confirmCtx = { type:'void', code };
+  $('#confirmTitle').textContent = '作废激活码';
+  $('#confirmDesc').innerHTML = `确认作废激活码 <strong>${code}</strong>？`;
+  $('#confirmWarn').textContent = '作废后该激活码无法恢复，已绑定的店铺将无法正常使用收银服务。';
+  $('#confirmOkBtn').querySelector('.btn-label').textContent = '确认作废';
+  openModal('confirmModal');
+}
+function askToggleShop(name, action){
+  const isDisable = action === 'disable';
+  confirmCtx = { type:'shop', name, action };
+  $('#confirmTitle').textContent = isDisable ? '确认停用店铺' : '确认启用店铺';
+  $('#confirmDesc').innerHTML = `确认${isDisable ? '停用' : '启用'}店铺「<strong>${name}</strong>」？`;
+  $('#confirmWarn').textContent = isDisable
+    ? '停用后该店所有员工无法登录、无法使用收银业务（立即生效）。'
+    : '启用后该店所有员工可立即恢复登录与收银业务。';
+  $('#confirmOkBtn').querySelector('.btn-label').textContent = isDisable ? '确认停用' : '确认启用';
+  openModal('confirmModal');
+}
+function confirmAction(){
+  const btn = $('#confirmOkBtn');
+  btn.classList.add('loading');
+  setTimeout(() => {
+    if(confirmCtx.type === 'void'){
+      codesData = codesData.map(c => c.code === confirmCtx.code ? { ...c, status:'voided' } : c);
+      toast('激活码已作废');
+    } else {
+      shopsData = shopsData.map(s => s.name === confirmCtx.name
+        ? { ...s, status: confirmCtx.action === 'disable' ? 'disabled' : 'active' } : s);
+      toast(`店铺已${confirmCtx.action === 'disable' ? '停用' : '启用'}`);
+    }
+    btn.classList.remove('loading');
+    closeModal('confirmModal');
+    renderCodes(); renderShops();
+  }, 700);
+}
+
+/* ============================================================
+   初始化
+   ============================================================ */
+initDD('codeStatusFilter');
+initDD('shopStatusFilter');
+renderCodes();
+renderShops();
+</script>
+</body>
+</html>
