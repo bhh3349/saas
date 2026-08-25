@@ -5,6 +5,7 @@ import { ActivationCode } from './entities/activation-code.entity';
 import { OpLog } from './entities/op-log.entity';
 import { Operator } from './entities/operator.entity';
 import { Shop } from './entities/shop.entity';
+import { SystemSetting } from './entities/system-setting.entity';
 
 /**
  * TypeORM CLI DataSource（migration 专用）。
@@ -14,7 +15,7 @@ import { Shop } from './entities/shop.entity';
 export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
   database: getConfig().dbPath,
-  entities: [Operator, ActivationCode, Shop, OpLog],
+  entities: [Operator, ActivationCode, Shop, OpLog, SystemSetting],
   migrations: ['src/migrations/*.ts'],
   synchronize: false,
 });

@@ -3,9 +3,10 @@
     <aside class="sidebar">
       <div class="sidebar-logo">
         <div class="brand-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
+          <img v-if="settings.logo" class="brand-logo" :src="settings.logo" alt="" />
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
         </div>
-        <span class="brand-name">收银云 · 平台后台</span>
+        <span class="brand-name">{{ settings.systemName }} · 平台后台</span>
       </div>
       <nav class="nav">
         <button class="nav-item" :class="{ active: isActive('/codes') }" @click="router.push('/codes')">
@@ -16,8 +17,12 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 6.5L4 3h8l1.5 3.5M2.5 6.5V12a1.5 1.5 0 0 0 1.5 1.5h8A1.5 1.5 0 0 0 13.5 12V6.5M2.5 6.5h11"/><circle cx="6" cy="9.5" r="1"/><circle cx="10" cy="9.5" r="1"/></svg>
           店铺管理
         </button>
+        <button class="nav-item" :class="{ active: isActive('/settings') }" @click="router.push('/settings')">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.8V3.4M8 12.6V14.2M1.8 8H3.4M12.6 8H14.2M3.6 3.6L4.7 4.7M11.3 11.3L12.4 12.4M12.4 3.6L11.3 4.7M4.7 11.3L3.6 12.4"/></svg>
+          系统设置
+        </button>
       </nav>
-      <div class="sidebar-footer">Platform Admin v0.1<br>© 2026 收银云</div>
+      <div class="sidebar-footer">Platform Admin v0.1<br>© 2026 {{ settings.systemName }}</div>
     </aside>
 
     <div class="main">
@@ -120,15 +125,18 @@ import { changePasswordApi, updateProfileApi } from '@/api/auth'
 import { exportCodesApi } from '@/api/codes'
 import { showToast } from '@/composables/useToast'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 import type { UpdateProfileParams } from '@/api/types'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const settings = useSettingsStore()
 
 const titleMap: Record<string, string> = {
   codes: '激活码管理',
   shops: '店铺管理',
+  settings: '系统设置',
 }
 
 const title = computed(() => titleMap[String(route.name)] ?? '平台后台')

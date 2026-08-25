@@ -3,9 +3,10 @@
     <div class="login-card">
       <div class="brand">
         <div class="brand-mark">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
+          <img v-if="settings.logo" class="brand-logo" :src="settings.logo" alt="" />
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7.5L12 3.5L20 7.5V16.5L12 20.5L4 16.5V7.5Z"/><path d="M4 7.5L12 11.5L20 7.5M12 11.5V20.5"/></svg>
         </div>
-        <span class="brand-name">收银云 · 平台后台</span>
+        <span class="brand-name">{{ settings.systemName }} · 平台后台</span>
       </div>
       <h1 class="login-title">登录管理后台</h1>
       <p class="login-sub">激活码与店铺的集中管理控制台</p>
@@ -43,9 +44,11 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 
 const router = useRouter()
 const auth = useAuthStore()
+const settings = useSettingsStore()
 
 const username = ref('')
 const password = ref('')

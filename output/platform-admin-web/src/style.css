@@ -564,3 +564,38 @@ select.input{ appearance:none; padding-right:36px; cursor:pointer;
   .toolbar .input.w-140{ width:100%; }
   .pagination{ flex-direction:column; align-items:flex-start; gap:10px; }
 }
+
+/* ============================================================
+   品牌图标（设置页上传的 logo 展示）
+   ============================================================ */
+.brand-mark .brand-logo{
+  width:100%; height:100%; object-fit:cover;
+  border-radius:inherit; display:block;
+}
+
+/* ============================================================
+   系统设置页
+   ============================================================ */
+.settings-card{
+  max-width:560px;
+  background:var(--surface-1); border:1px solid var(--hairline);
+  border-radius:var(--r-lg); padding:28px;
+  box-shadow:var(--shadow-card);
+  animation:pageIn .4s var(--ease-out) both;
+}
+.settings-field + .settings-field{ margin-top:28px; padding-top:24px; border-top:1px solid var(--hairline); }
+.settings-field-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+.settings-field-head .form-label{ margin-bottom:0; }
+.settings-field-tip{ font-size:12px; color:var(--ink-tertiary); }
+.settings-input{ padding-left:12px; max-width:320px; }
+.settings-upload-row{ display:flex; align-items:center; gap:16px; margin-top:10px; }
+.settings-preview{
+  width:64px; height:64px; border-radius:14px;
+  background:var(--surface-2); border:1px dashed var(--hairline-strong);
+  display:grid; place-items:center; overflow:hidden; flex-shrink:0;
+}
+.settings-preview img{ width:100%; height:100%; object-fit:cover; display:block; }
+.settings-preview svg{ width:28px; height:28px; color:var(--ink-tertiary); }
+.preview-favicon{ width:44px; height:44px; border-radius:10px; }
+.settings-upload-actions{ display:flex; align-items:center; gap:8px; }
+.settings-actions{ margin-top:28px; padding-top:20px; border-top:1px solid var(--hairline); display:flex; align-items:center; gap:12px; }

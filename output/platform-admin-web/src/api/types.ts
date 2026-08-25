@@ -71,3 +71,19 @@ export interface LoginResult {
   token: string
   operator: OperatorInfo
 }
+
+// ---------- 系统设置 ----------
+export interface SystemSetting {
+  system_name: string
+  /** logo（data URL），为空表示使用默认图标 */
+  logo: string | null
+  /** favicon（data URL），为空表示使用默认 favicon.svg */
+  favicon: string | null
+}
+
+export interface UpdateSystemSettingParams {
+  system_name?: string
+  /** 传空字符串表示清除，恢复默认图标 */
+  logo?: string
+  favicon?: string
+}
