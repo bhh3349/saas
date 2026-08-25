@@ -8,6 +8,9 @@ target/
 *.db
 *.sqlite
 *.log
+*.log.err
+*.err
+stdout*
 npm-debug.log*
 
 # 环境变量
@@ -25,3 +28,11 @@ npm-debug.log*
 # 操作系统
 .DS_Store
 Thumbs.db
+
+# 真实门店参考数据（美团导出等），不提交
+dl_check/
+temp_*
+一棵树土火锅_桌台信息表*.xlsx
+area-form.png
+merchant-web/area-form.png
+merchant-web/sf-*.png

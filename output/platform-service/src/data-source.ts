@@ -15,6 +15,6 @@ export const AppDataSource = new DataSource({
   type: 'better-sqlite3',
   database: getConfig().dbPath,
   entities: [Operator, ActivationCode, Shop, OpLog],
-  migrations: ['migrations/*.ts'],
+  migrations: ['src/migrations/*.ts'],
   synchronize: false,
 });
