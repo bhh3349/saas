@@ -3,6 +3,7 @@ import 'reflect-metadata';
 import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AppModule } from './app.module';
@@ -29,6 +30,10 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400,
   });
+
+  // 允许较大的 JSON body（头像等 base64 数据）；限制 2MB
+  app.use(json({ limit: '2mb' }));
+  app.use(urlencoded({ extended: true, limit: '2mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),
