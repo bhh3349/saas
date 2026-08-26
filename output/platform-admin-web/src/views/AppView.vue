@@ -167,7 +167,8 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 function handleLogout() {
   menuOpen.value = false
   auth.logout()
-  router.replace('/')
+  // 直接跳登录页，避免经过“/ → 重定向 /codes（当前路由）”造成导航被取消
+  router.replace('/login')
 }
 
 const exporting = ref(false)
