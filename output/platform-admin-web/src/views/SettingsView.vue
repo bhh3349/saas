@@ -1,5 +1,5 @@
 <template>
-  <section class="page">
+  <section class="page settings-page">
     <div class="page-head">
       <h2 class="page-title">系统设置</h2>
       <p class="page-desc">配置平台名称与品牌图标，保存后登录页、侧边栏、浏览器标签页全局生效</p>

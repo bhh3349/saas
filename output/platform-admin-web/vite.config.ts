@@ -26,6 +26,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // 平台端后端：NestJS 3100
+      '/api': { target: 'http://127.0.0.1:3100', changeOrigin: true },
       '/auth': { target: 'http://127.0.0.1:3100', changeOrigin: true },
       '/admin': { target: 'http://127.0.0.1:3100', changeOrigin: true },
     },

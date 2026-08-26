@@ -5,7 +5,7 @@ import { Roles, RolesGuard } from '../../common/guards/roles.guard';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { SettingsService } from './settings.service';
 
-@Controller('settings')
+@Controller('api/settings')
 export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 

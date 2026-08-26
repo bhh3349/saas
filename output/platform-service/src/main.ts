@@ -31,9 +31,9 @@ async function bootstrap(): Promise<void> {
     maxAge: 86400,
   });
 
-  // 允许较大的 JSON body（头像等 base64 数据）；限制 2MB
-  app.use(json({ limit: '2mb' }));
-  app.use(urlencoded({ extended: true, limit: '2mb' }));
+  // 允许较大的 JSON body（头像等 base64 数据）；限制 8MB
+  app.use(json({ limit: '8mb' }));
+  app.use(urlencoded({ extended: true, limit: '8mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),

@@ -576,8 +576,11 @@ select.input{ appearance:none; padding-right:36px; cursor:pointer;
 /* ============================================================
    系统设置页
    ============================================================ */
+.settings-page .page-head{ text-align:center; }
+.settings-page .page-head .page-desc{ text-align:center; }
 .settings-card{
   max-width:560px;
+  margin:0 auto;
   background:var(--surface-1); border:1px solid var(--hairline);
   border-radius:var(--r-lg); padding:28px;
   box-shadow:var(--shadow-card);
