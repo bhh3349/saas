@@ -101,7 +101,7 @@ export default function InStoreOrders() {
       align: 'center',
       render: (r) => (r.mode === 'table' ? r.table_name ?? '—' : r.ticket_no ? `#${r.ticket_no}` : '—'),
     },
-    { key: 'items', title: '品项', minWidth: 180, render: (r) => itemsSummary(r.items) },
+    { key: 'items', title: '品项', width: 180, render: (r) => itemsSummary(r.items) },
     { key: 'total_amount', title: '应付(元)', width: 95, align: 'right', render: (r) => r.total_amount.toFixed(2) },
     { key: 'paid_amount', title: '实收(元)', width: 95, align: 'right', strong: true, render: (r) => r.paid_amount.toFixed(2) },
     { key: 'payment_method_name', title: '结账方式', width: 95, render: (r) => r.payment_method_name ?? '—' },

@@ -201,7 +201,7 @@ export default function CheckoutManage() {
   const [methods, setMethods] = useState<CheckoutMethod[]>(DEFAULT_METHODS);
   const [cats, setCats] = useState<CheckoutCategory[]>(DEFAULT_CATS);
   const [quick, setQuick] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
 
   /** 搜索 */
   const [keyword, setKeyword] = useState('');

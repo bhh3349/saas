@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import Toast, { type ToastData } from '../components/Toast';
 import ConfirmModal from '../components/ConfirmModal';
+import SelectDishesModal from '../components/SelectDishesModal';
 import { getBucket, putBucket } from '../api/buckets';
+import { listDishesApi, type DishItem } from '../api/dishes';
 
 /** 档口配置桶 key */
 const BUCKET_KEY = 'stall';
@@ -19,12 +21,6 @@ interface ReceiptConfig {
 interface DishSelector {
   /** 店内菜品 */
   inStore: string[];
-  /** 美团外卖菜品 */
-  meituan: string[];
-  /** 淘宝闪购菜品 */
-  taobao: string[];
-  /** 京东秒送菜品 */
-  jd: string[];
 }
 
 interface Stall {
@@ -68,15 +64,13 @@ interface Stall {
 /** 打印区域 */
 const AREA_OPTIONS = ['全部', '前厅', '后厨', '吧台'];
 /** 订单来源 */
-const ORDER_SOURCE_OPTIONS = ['收银台', '扫码点餐', '外卖平台'];
+const ORDER_SOURCE_OPTIONS = ['收银台', '扫码点餐'];
 /** 订单类型 */
-const ORDER_TYPE_OPTIONS = ['堂食', '外卖', '自提'];
+const ORDER_TYPE_OPTIONS = ['堂食'];
 /** 后厨档口：选择做法 */
 const METHOD_OPTIONS = ['全部', '不辣', '微辣', '中辣', '特辣', '少油', '少盐'];
 /** 后厨档口：打印任务收银机来源 */
-const CASHIER_SOURCE_OPTIONS = ['全部', '收银台', '扫码点餐', '外卖平台'];
-/** 后厨档口：打印菜品选择（店内/各外卖渠道共用分类） */
-const DISH_SELECTOR_OPTIONS = ['全部', '荤菜', '素菜', '小吃', '酒水', '锅底'];
+const CASHIER_SOURCE_OPTIONS = ['全部', '收银台', '扫码点餐'];
 /** 后厨档口：打印方式 */
 const KITCHEN_PRINT_OPTIONS = ['整单打印', '分单打印'];
 
@@ -97,18 +91,7 @@ const SECTIONS: {
     tickets: {
       key: 'cashier-receipt',
       title: '收银小票',
-      types: [
-        '客单',
-        '预结单',
-        '结账单',
-        '预订单',
-        '外卖商家联',
-        '外卖顾客联',
-        '交班单',
-        '退单',
-        '寄存单',
-        '排菜单',
-      ],
+      types: ['客单', '预结单', '结账单', '交班单', '退单'],
     },
   },
   {
@@ -119,7 +102,7 @@ const SECTIONS: {
       title: '后厨小票',
       types: [
         '制作单', '退菜单', '催菜单', '起菜单', '转菜单', '转台单', '传菜单',
-        '外卖后厨联', '外卖催菜联', '外卖退菜联', '外卖漏打提醒单', '整桌通知单', '菜品备注单',
+        '整桌通知单', '菜品备注单',
       ],
     },
   },
@@ -142,7 +125,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '收银台',
     areaIds: ['全部'],
     orderSources: ['收银台', '扫码点餐'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -152,38 +135,8 @@ const DEFAULT_STALLS: Stall[] = [
       { type: '客单', copies: 0 },
       { type: '预结单', copies: 1 },
       { type: '结账单', copies: 1 },
-      { type: '预订单', copies: 0 },
-      { type: '外卖商家联', copies: 1 },
-      { type: '外卖顾客联', copies: 1 },
       { type: '交班单', copies: 0 },
       { type: '退单', copies: 0 },
-      { type: '寄存单', copies: 0 },
-      { type: '排菜单', copies: 0 },
-    ],
-  },
-  {
-    id: 'c2',
-    kind: 'cashier',
-    name: '外卖出餐口',
-    areaIds: ['吧台'],
-    orderSources: ['外卖平台'],
-    orderTypes: ['外卖'],
-    timeStart: '10:00',
-    timeEnd: '22:00',
-    sortOrder: 'desc',
-    itemMerge: 'merge',
-    deviceCount: 1,
-    receipts: [
-      { type: '客单', copies: 0 },
-      { type: '预结单', copies: 0 },
-      { type: '结账单', copies: 0 },
-      { type: '预订单', copies: 0 },
-      { type: '外卖商家联', copies: 1 },
-      { type: '外卖顾客联', copies: 1 },
-      { type: '交班单', copies: 0 },
-      { type: '退单', copies: 0 },
-      { type: '寄存单', copies: 0 },
-      { type: '排菜单', copies: 0 },
     ],
   },
   // 后厨档口
@@ -193,7 +146,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '荤菜档',
     areaIds: ['后厨'],
     orderSources: ['收银台', '扫码点餐'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -205,7 +158,7 @@ const DEFAULT_STALLS: Stall[] = [
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   },
   {
@@ -214,7 +167,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '素菜档',
     areaIds: ['后厨'],
     orderSources: ['收银台', '扫码点餐'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -226,7 +179,7 @@ const DEFAULT_STALLS: Stall[] = [
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   },
   {
@@ -235,7 +188,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '小吃档',
     areaIds: ['吧台'],
     orderSources: ['收银台', '扫码点餐'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -247,7 +200,7 @@ const DEFAULT_STALLS: Stall[] = [
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   },
   {
@@ -256,7 +209,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '酒水档',
     areaIds: ['吧台'],
     orderSources: ['收银台'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -268,7 +221,7 @@ const DEFAULT_STALLS: Stall[] = [
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   },
   {
@@ -277,7 +230,7 @@ const DEFAULT_STALLS: Stall[] = [
     name: '锅底档',
     areaIds: ['后厨'],
     orderSources: ['收银台', '扫码点餐'],
-    orderTypes: ['堂食', '外卖'],
+    orderTypes: ['堂食'],
     timeStart: '00:00',
     timeEnd: '23:59',
     sortOrder: 'category',
@@ -289,7 +242,7 @@ const DEFAULT_STALLS: Stall[] = [
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   },
 ];
@@ -341,7 +294,7 @@ const EMPTY_FORM = (kind: StallKind): StallForm => {
     comboPrinting: 'detail',
     cashierSources: ['全部'],
     timeSlotMode: 'all',
-    dishSelectors: { inStore: [], meituan: [], taobao: [], jd: [] },
+    dishSelectors: { inStore: [] },
     printMethods: ['整单打印'],
   };
 };
@@ -365,9 +318,6 @@ const toForm = (s: Stall): StallForm => ({
   timeSlotMode: s.timeSlotMode ?? 'all',
   dishSelectors: {
     inStore: [...(s.dishSelectors?.inStore ?? [])],
-    meituan: [...(s.dishSelectors?.meituan ?? [])],
-    taobao: [...(s.dishSelectors?.taobao ?? [])],
-    jd: [...(s.dishSelectors?.jd ?? [])],
   },
   printMethods: s.printMethods ? [...s.printMethods] : ['整单打印'],
 });
@@ -382,6 +332,10 @@ export default function StallManage() {
   const [del, setDel] = useState<Stall | null>(null);
   /** 后厨票据批量设置下拉 */
   const [batchMenu, setBatchMenu] = useState(false);
+  /** 店内菜品选择弹窗 */
+  const [dishModalOpen, setDishModalOpen] = useState(false);
+  /** 菜品 id → 名称映射（用于已选菜品摘要展示） */
+  const [dishNameMap, setDishNameMap] = useState<Record<string, string>>({});
 
   /** 从云端加载档口配置 */
   useEffect(() => {
@@ -394,6 +348,37 @@ export default function StallManage() {
       .catch(() => {
         if (active) setStalls(DEFAULT_STALLS);
       });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /** 加载菜品名映射（用于已选菜品摘要展示） */
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const all: DishItem[] = [];
+        let p = 1;
+        let total = Infinity;
+        while (all.length < total) {
+          const res = await listDishesApi({ page: p, page_size: 100 });
+          all.push(...res.items);
+          total = res.total;
+          if (res.items.length === 0) break;
+          p++;
+        }
+        if (active) {
+          const map: Record<string, string> = {};
+          all.forEach((d) => {
+            map[String(d.id)] = d.name;
+          });
+          setDishNameMap(map);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
     return () => {
       active = false;
     };
@@ -430,15 +415,6 @@ export default function StallManage() {
       const cur = prev[field];
       const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
       return { ...prev, [field]: next };
-    });
-  };
-
-  /** 后厨：打印菜品选择切换 */
-  const toggleDish = (field: keyof DishSelector, v: string) => {
-    setForm((prev) => {
-      const cur = prev.dishSelectors[field];
-      const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v];
-      return { ...prev, dishSelectors: { ...prev.dishSelectors, [field]: next } };
     });
   };
 
@@ -496,9 +472,6 @@ export default function StallManage() {
       timeSlotMode: form.timeSlotMode,
       dishSelectors: {
         inStore: [...form.dishSelectors.inStore],
-        meituan: [...form.dishSelectors.meituan],
-        taobao: [...form.dishSelectors.taobao],
-        jd: [...form.dishSelectors.jd],
       },
       printMethods: form.printMethods,
     };
@@ -570,18 +543,6 @@ export default function StallManage() {
       {options.map((o) => (
         <label className="stall-ticket-item" key={o}>
           <input type="checkbox" checked={form[field].includes(o)} onChange={() => toggle(field, o)} />
-          <span>{o}</span>
-        </label>
-      ))}
-    </div>
-  );
-
-  /** 后厨：打印菜品选择 */
-  const renderDishGroup = (field: keyof DishSelector, options: string[]) => (
-    <div className="stall-ticket-list">
-      {options.map((o) => (
-        <label className="stall-ticket-item" key={o}>
-          <input type="checkbox" checked={form.dishSelectors[field].includes(o)} onChange={() => toggleDish(field, o)} />
           <span>{o}</span>
         </label>
       ))}
@@ -851,21 +812,39 @@ export default function StallManage() {
                   <div className="stall-form-grid">
                     <div className="checkout-form-row">
                       <label>店内菜品选择</label>
-                      {renderDishGroup('inStore', DISH_SELECTOR_OPTIONS)}
-                    </div>
-                    <div className="checkout-form-row">
-                      <label>美团外卖菜品选择</label>
-                      {renderDishGroup('meituan', DISH_SELECTOR_OPTIONS)}
-                    </div>
-                    <div className="checkout-form-row">
-                      <label>淘宝闪购菜品选择</label>
-                      {renderDishGroup('taobao', DISH_SELECTOR_OPTIONS)}
-                    </div>
-                    <div className="checkout-form-row">
-                      <label>京东秒送菜品选择</label>
-                      {renderDishGroup('jd', DISH_SELECTOR_OPTIONS)}
+                      <button
+                        type="button"
+                        className="dish-selector-trigger"
+                        onClick={() => setDishModalOpen(true)}
+                      >
+                        {(() => {
+                          const ids = form.dishSelectors.inStore;
+                          if (ids.length === 0) return '请选择店内菜品关联';
+                          const shown = ids.slice(0, 3).map((id) => dishNameMap[id] || id);
+                          const more = ids.length > 3 ? ` +${ids.length - 3}` : '';
+                          return shown.join('、') + more;
+                        })()}
+                      </button>
                     </div>
                   </div>
+
+                  <SelectDishesModal
+                    open={dishModalOpen}
+                    initialSelected={form.dishSelectors.inStore}
+                    onClose={() => setDishModalOpen(false)}
+                    onConfirm={(items) => {
+                      const map: Record<string, string> = {};
+                      items.forEach((it) => {
+                        map[it.id] = it.name;
+                      });
+                      setDishNameMap((prev) => ({ ...prev, ...map }));
+                      setForm((prev) => ({
+                        ...prev,
+                        dishSelectors: { ...prev.dishSelectors, inStore: items.map((it) => it.id) },
+                      }));
+                      setDishModalOpen(false);
+                    }}
+                  />
 
                   {/* 打印效果设置（后厨） */}
                   <h4 className="stall-form-section-title">打印效果设置</h4>

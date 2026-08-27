@@ -90,7 +90,7 @@ export default function BizStats() {
       ...rows.map((r) => [r.date, r.revenue, r.order_count, r.avg_amount, r.table_count]),
       ['合计', +totalRevenue.toFixed(2), totalOrders, +avgAmount.toFixed(2), ''],
     ];
-    exportAoaToXlsx(aoa, `综合营业统计_${from}_${to}`);
+    exportAoaToXlsx(aoa, { filename: `综合营业统计_${from}_${to}` });
   };
 
   return (

@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../components/EmptyState';
 import Icon from '../components/Icon';
-import AddAreaModal, { type AreaFormItem } from '../components/AddAreaModal';
-import EditAreaModal from '../components/EditAreaModal';
-import SortAreaModal, { type SortAreaItem } from '../components/SortAreaModal';
-import BatchDeleteAreasModal from '../components/BatchDeleteAreasModal';
 import AddTableModal, { type TableFormItem } from '../components/AddTableModal';
 import BatchAddTableModal from '../components/BatchAddTableModal';
 import BatchDeleteTableModal from '../components/BatchDeleteTableModal';
@@ -31,17 +27,8 @@ import {
 import { getStoredShop } from '../api/http';
 import {
   listAreasApi,
-  createAreasApi,
-  sortAreasApi,
-  deleteAreaApi,
-  updateAreaApi,
   type AreaItem,
 } from '../api/areas';
-
-const TABS = ['桌台区域', '桌台管理'] as const;
-
-type TableKind = 'area' | 'table';
-type WidthSetter = (updater: (prev: number[]) => number[]) => void;
 
 interface ColDef {
   key: string;
@@ -51,14 +38,6 @@ interface ColDef {
   right?: boolean;
   center?: boolean;
 }
-
-/** 区域列表列定义（双击表头可直接输入列宽） */
-const AREA_COLS: ColDef[] = [
-  { key: 'idx', label: '序号', width: 88, center: true },
-  { key: 'name', label: '名称', width: 280 },
-  { key: 'count', label: '桌台数量', width: 160, tip: '该区域下的桌台数量', center: true },
-  { key: 'actions', label: '操作', width: 140, right: true },
-];
 
 /** 桌台列表列定义（序号/桌台ID/桌台名称/所属区域/标准用餐人数/用餐人数范围/数字助记码/操作） */
 const TABLE_COLS: ColDef[] = [
@@ -88,22 +67,9 @@ interface TableManageProps {
   onNavigate?: (viewKey: ViewKey, label: string) => void;
 }
 
-const TAB_KEY = 'merchant_table_tab';
-
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export default function TableManage({ onNavigate }: TableManageProps = {}) {
-  const [activeTab, setActiveTab] = useState<string>(() => {
-    const saved = localStorage.getItem(TAB_KEY);
-    return saved === '桌台区域' || saved === '桌台管理' ? saved : '桌台区域';
-  });
-  const switchTab = (tab: string) => {
-    setActiveTab(tab);
-    localStorage.setItem(TAB_KEY, tab);
-  };
-  /** 区域 tab 搜索（输入值 + 已提交关键字） */
-  const [areaQuery, setAreaQuery] = useState<string>('');
-  const [areaKeyword, setAreaKeyword] = useState<string>('');
   /** 桌台 tab 搜索（输入值 + 已提交关键字，回车/点查询才生效） */
   const [tableQuery, setTableQuery] = useState<string>('');
   const [tableKeyword, setTableKeyword] = useState<string>('');
@@ -116,7 +82,6 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
 
   /** ---- 真实数据 ---- */
   const [areas, setAreas] = useState<AreaItem[]>([]);
-  const [areaLoading, setAreaLoading] = useState(false);
   const [tables, setTables] = useState<TableRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -128,18 +93,8 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
   const [batchImportOpen, setBatchImportOpen] = useState(false);
   const [editingTable, setEditingTable] = useState<TableRow | null>(null);
 
-  const [addOpen, setAddOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingArea, setEditingArea] = useState<AreaItem | null>(null);
-  const [sortOpen, setSortOpen] = useState(false);
-  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
-
   /** 应用内确认弹窗（替代 window.confirm，避免原生弹窗被拦截） */
-  const [confirmState, setConfirmState] = useState<
-    | { kind: 'area'; area: AreaItem }
-    | { kind: 'table'; row: TableRow }
-    | null
-  >(null);
+  const [confirmState, setConfirmState] = useState<{ row: TableRow } | null>(null);
 
   /** 应用内轻提示（替代 window.alert，避免原生弹窗被拦截） */
   const [toast, setToast] = useState<{
@@ -153,55 +108,49 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
     toastTimer.current = window.setTimeout(() => setToast(null), 3000);
   }, []);
 
-  /** 区域 / 桌台列表列宽 */
-  const [areaColWidths, setAreaColWidths] = useState<number[]>(AREA_COLS.map((c) => c.width));
+  /** 桌台列表列宽 */
   const [tableColWidths, setTableColWidths] = useState<number[]>(
     TABLE_COLS.map((c) => c.width),
   );
   /** 双击表头编辑列宽 */
-  const [editingCol, setEditingCol] = useState<{ tbl: TableKind; idx: number } | null>(null);
+  const [editingColIdx, setEditingColIdx] = useState<number | null>(null);
   const [draftWidth, setDraftWidth] = useState('');
 
   const pageSizeNum = Number(pageSize) || 10;
 
-  const getWidths = (tbl: TableKind) => (tbl === 'area' ? areaColWidths : tableColWidths);
-  const getSetter = (tbl: TableKind): WidthSetter =>
-    tbl === 'area' ? setAreaColWidths : setTableColWidths;
-
   /** 双击列头 → 输入宽度（px）→ 回车固定 */
-  const startEditCol = (tbl: TableKind, i: number) => {
-    setEditingCol({ tbl, idx: i });
-    setDraftWidth(String(getWidths(tbl)[i]));
+  const startEditCol = (i: number) => {
+    setEditingColIdx(i);
+    setDraftWidth(String(tableColWidths[i]));
   };
 
   const commitColWidth = () => {
-    if (!editingCol) return;
+    if (editingColIdx === null) return;
     const n = parseInt(draftWidth, 10);
     if (!Number.isNaN(n)) {
       const w = Math.min(Math.max(50, n), 600);
-      const setter = getSetter(editingCol.tbl);
-      setter((prev) => {
+      setTableColWidths((prev) => {
         const next = [...prev];
-        next[editingCol.idx] = w;
+        next[editingColIdx] = w;
         return next;
       });
     }
-    setEditingCol(null);
+    setEditingColIdx(null);
   };
 
-  /** 渲染一个表格列头（支持双击输入列宽 + 拖拽） */
-  const renderColHead = (tbl: TableKind, cols: readonly ColDef[], widths: number[]) => (
+  /** 渲染桌台表格列头（支持双击输入列宽） */
+  const renderColHead = (cols: readonly ColDef[], widths: number[]) => (
     <thead>
       <tr>
         {cols.map((col, i) => {
-          const isEditing = editingCol?.tbl === tbl && editingCol.idx === i;
+          const isEditing = editingColIdx === i;
           return (
             <th
               key={col.key}
               className={`${col.right ? 'th-sticky' : ''} ${col.center ? 'th-center' : ''}`}
               style={{ width: widths[i] }}
               title="双击设置列宽"
-              onDoubleClick={() => startEditCol(tbl, i)}
+              onDoubleClick={() => startEditCol(i)}
             >
               {isEditing ? (
                 <input
@@ -212,7 +161,7 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
                   onChange={(e) => setDraftWidth(e.target.value.replace(/\D/g, ''))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitColWidth();
-                    if (e.key === 'Escape') setEditingCol(null);
+                    if (e.key === 'Escape') setEditingColIdx(null);
                   }}
                   onBlur={commitColWidth}
                   onDoubleClick={(e) => e.stopPropagation()}
@@ -234,14 +183,11 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
 
   /** ---- 数据加载 ---- */
   const loadAreas = useCallback(async () => {
-    setAreaLoading(true);
     try {
       const res = await listAreasApi();
       setAreas(res);
     } catch (e) {
       console.error('加载区域失败:', e);
-    } finally {
-      setAreaLoading(false);
     }
   }, []);
 
@@ -275,76 +221,6 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
   const selectArea = (key: string) => {
     setSelectedArea(key);
     setPage(1);
-  };
-
-  /** ---- 区域操作 ---- */
-  const handleAddAreas = async (items: AreaFormItem[]) => {
-    try {
-      await createAreasApi(items.map((it) => it.name));
-      setAddOpen(false);
-      await loadAreas();
-    } catch (e) {
-      showToast('error', errMsg(e));
-    }
-  };
-
-  const handleSortAreas = async (sorted: SortAreaItem[]) => {
-    try {
-      await sortAreasApi(sorted.map((s) => ({ id: Number(s.id), sort: s.sort })));
-      setSortOpen(false);
-      await loadAreas();
-    } catch (e) {
-      showToast('error', errMsg(e));
-    }
-  };
-
-  const handleBatchDeleteAreas = async (ids: Array<string | number>) => {
-    try {
-      await Promise.all(ids.map((id) => deleteAreaApi(Number(id))));
-      setBatchDeleteOpen(false);
-      await loadAreas();
-      if (selectedArea !== 'all' && !areas.some((a) => a.name === selectedArea)) {
-        setSelectedArea('all');
-      }
-    } catch (e) {
-      showToast('error', errMsg(e));
-    }
-  };
-
-  const handleDeleteArea = (area: AreaItem) => {
-    setConfirmState({ kind: 'area', area });
-  };
-
-  const confirmDeleteArea = async () => {
-    if (!confirmState || confirmState.kind !== 'area') return;
-    const { area } = confirmState;
-    setConfirmState(null);
-    try {
-      await deleteAreaApi(area.id);
-      await loadAreas();
-      if (selectedArea === area.name) setSelectedArea('all');
-    } catch (e) {
-      showToast('error', errMsg(e));
-    }
-  };
-
-  const handleEditArea = (area: AreaItem) => {
-    setEditingArea(area);
-    setEditOpen(true);
-  };
-
-  const handleRenameArea = async (name: string) => {
-    if (!editingArea) return;
-    try {
-      await updateAreaApi(editingArea.id, name);
-      setEditOpen(false);
-      setEditingArea(null);
-      await Promise.all([loadAreas(), loadTables()]);
-      // 当前选中区域被重命名时，同步选中到新名称
-      if (selectedArea === editingArea.name) setSelectedArea(name);
-    } catch (e) {
-      showToast('error', errMsg(e));
-    }
   };
 
   /** ---- 桌台操作 ---- */
@@ -407,11 +283,11 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
   };
 
   const handleDeleteTable = (row: TableRow) => {
-    setConfirmState({ kind: 'table', row });
+    setConfirmState({ row });
   };
 
   const confirmDeleteTable = async () => {
-    if (!confirmState || confirmState.kind !== 'table') return;
+    if (!confirmState) return;
     const { row } = confirmState;
     setConfirmState(null);
     try {
@@ -507,9 +383,6 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
   const visibleNodes = treeNodes.filter((n) =>
     treeSearch ? n.label.toLowerCase().includes(treeSearch.toLowerCase()) : true,
   );
-  const filteredAreas = areas.filter((a) =>
-    areaKeyword ? a.name.toLowerCase().includes(areaKeyword.toLowerCase()) : true,
-  );
 
   return (
     <div className="page">
@@ -517,196 +390,73 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
         <h1 className="page-title">桌台管理</h1>
       </div>
 
-      {activeTab === '桌台区域' ? (
-        <div className="area-panel tm-main-panel">
-          <div className="table-manage-tabs">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                className={`pill-tab ${tab === activeTab ? 'active' : ''}`}
-                onClick={() => switchTab(tab)}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-          {/* 必点菜提示横幅 */}
-          <div className="tm-tip">
-            <span className="tm-tip-icon" aria-hidden>!</span>
-            如想在开台时自动添加必点菜，点此处设置
-            <a
-              href="#"
-              onClick={(e) => {
-                e.preventDefault();
-                onNavigate?.('ops:business:must', '必点菜设置');
-              }}
-            >
-              必点菜方案
-            </a>
-          </div>
-
-          {/* 操作按钮行 */}
-          <div className="tm-toolbar">
-            <button
-              className="tm-btn tm-btn-primary"
-              onClick={() => setAddOpen(true)}
-            >
-              新增区域
-            </button>
-            <button
-              className="tm-btn tm-btn-default"
-              onClick={() => setSortOpen(true)}
-            >
-              区域排序
-            </button>
-            <button
-              className="tm-btn tm-btn-default"
-              onClick={() => setBatchDeleteOpen(true)}
-            >
-              批量删除
-            </button>
-          </div>
-
-          {/* 区域列表 */}
-          <section className="panel" style={{ flex: 1, minHeight: 0 }}>
-            <div className="panel-body">
-              {/* 搜索行 */}
-              <SearchForm
-                fields={[{ key: 'areaQuery', label: '区域名称：', placeholder: '请输入' }]}
-                values={{ areaQuery }}
-                onChange={(k, v) => {
-                  if (k === 'areaQuery') setAreaQuery(v);
-                }}
-                onSearch={() => setAreaKeyword(areaQuery.trim())}
-                onReset={() => {
-                  setAreaQuery('');
-                  setAreaKeyword('');
-                }}
-              />
-
-              <div className="data-table area-table">
-                <div className="area-table-scroll">
-                  <table className="checkout-real-table">
-                    <colgroup>
-                      {AREA_COLS.map((c, i) => (
-                        <col key={c.key} style={{ width: areaColWidths[i] }} />
-                      ))}
-                    </colgroup>
-                    {renderColHead('area', AREA_COLS, areaColWidths)}
-                    <tbody>
-                      {areaLoading ? (
-                        <tr>
-                          <td colSpan={4} style={{ height: 160, textAlign: 'center', padding: 0 }}>
-                            <EmptyState title="加载中…" />
-                          </td>
-                        </tr>
-                      ) : filteredAreas.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} style={{ height: 160, textAlign: 'center', padding: 0 }}>
-                            <EmptyState
-                              title="暂无区域"
-                              desc="点击右上角「新增区域」创建第一个区域"
-                            />
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredAreas.map((a, i) => (
-                          <tr key={a.id}>
-                            <td className="td-center">{i + 1}</td>
-                            <td>{a.name}</td>
-                            <td className="td-center">{a.tableCount}</td>
-                            <td className="td-sticky">
-                              <div className="row-actions">
-                                <button
-                                  className="action-link"
-                                  type="button"
-                                  onClick={() => handleEditArea(a)}
-                                >
-                                  编辑
-                                </button>
-                                <button
-                                  className="action-link danger"
-                                  type="button"
-                                  onClick={() => handleDeleteArea(a)}
-                                >
-                                  删除
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </section>
+      <div className="table-panel-wrap tm-main-panel">
+        {/* 必点菜提示横幅 */}
+        <div className="tm-tip">
+          <span className="tm-tip-icon" aria-hidden>!</span>
+          如想在开台时自动添加必点菜，点此处设置
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate?.('ops:business:must', '必点菜设置');
+            }}
+          >
+            必点菜方案
+          </a>
         </div>
-      ) : (
-        <div className="table-panel-wrap tm-main-panel">
-          <div className="table-manage-tabs">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                className={`pill-tab ${tab === activeTab ? 'active' : ''}`}
-                onClick={() => switchTab(tab)}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-          {/* 功能按钮区（独立成行，不在 panel-body 表单 DOM 内，跨整个表格分栏宽度） */}
-          <div className="tm-toolbar">
-            <button
-              className="tm-btn tm-btn-primary"
-              onClick={() => {
-                setEditingTable(null);
-                setTableAddOpen(true);
-              }}
-            >
-              新增桌台
-            </button>
-            <button
-              className="tm-btn tm-btn-default"
-              onClick={() => {
-                // TODO: 后续接桌台排序弹窗
-                console.log('桌台排序');
-              }}
-            >
-              桌台排序
-            </button>
-            <CommonSelect
-              value={batchAction}
-              placeholder="批量操作"
-              width={200}
-              options={[
-                { value: 'add', label: '批量新增' },
-                { value: 'import', label: '批量导入' },
-                { value: 'delete', label: '批量删除' },
-              ]}
-              onChange={(v) => {
-                setBatchAction('');
-                if (v === 'add') {
-                  setBatchAddOpen(true);
-                } else if (v === 'import') {
-                  setBatchImportOpen(true);
-                } else if (v === 'delete') {
-                  setBatchDeleteTableOpen(true);
-                }
-              }}
-            />
-            <button
-              className="tm-btn tm-btn-default"
-              onClick={() => {
-                void handleExportTables();
-              }}
-            >
-              <Icon name="export" className="btn-icon" />
-              桌台导出
-            </button>
-          </div>
-          <div className="table-panel table-split">
+
+        {/* 功能按钮区（独立成行，不在 panel-body 表单 DOM 内，跨整个表格分栏宽度） */}
+        <div className="tm-toolbar">
+          <button
+            className="tm-btn tm-btn-primary"
+            onClick={() => {
+              setEditingTable(null);
+              setTableAddOpen(true);
+            }}
+          >
+            新增桌台
+          </button>
+          <button
+            className="tm-btn tm-btn-default"
+            onClick={() => {
+              // TODO: 后续接桌台排序弹窗
+              console.log('桌台排序');
+            }}
+          >
+            桌台排序
+          </button>
+          <CommonSelect
+            value={batchAction}
+            placeholder="批量操作"
+            width={200}
+            options={[
+              { value: 'add', label: '批量新增' },
+              { value: 'import', label: '批量导入' },
+              { value: 'delete', label: '批量删除' },
+            ]}
+            onChange={(v) => {
+              setBatchAction('');
+              if (v === 'add') {
+                setBatchAddOpen(true);
+              } else if (v === 'import') {
+                setBatchImportOpen(true);
+              } else if (v === 'delete') {
+                setBatchDeleteTableOpen(true);
+              }
+            }}
+          />
+          <button
+            className="tm-btn tm-btn-default"
+            onClick={() => {
+              void handleExportTables();
+            }}
+          >
+            <Icon name="export" className="btn-icon" />
+            桌台导出
+          </button>
+        </div>
+        <div className="table-panel table-split">
           {/* 左侧区域树（全部/大厅/外摆…，计数取自区域接口） */}
           <aside className="tree-panel">
             <div className="tree-search">
@@ -767,7 +517,7 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
                         <col key={c.key} style={{ width: tableColWidths[i] }} />
                       ))}
                     </colgroup>
-                    {renderColHead('table', TABLE_COLS, tableColWidths)}
+                    {renderColHead(TABLE_COLS, tableColWidths)}
                     <tbody>
                       {tableLoading ? (
                         <tr>
@@ -834,35 +584,7 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
             </div>
           </section>
         </div>
-        </div>
-      )}
-
-      <AddAreaModal
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-        onSubmit={handleAddAreas}
-      />
-
-      <EditAreaModal
-        open={editOpen}
-        initialName={editingArea?.name ?? ''}
-        onClose={() => setEditOpen(false)}
-        onSubmit={handleRenameArea}
-      />
-
-      <SortAreaModal
-        open={sortOpen}
-        areas={areas}
-        onClose={() => setSortOpen(false)}
-        onSubmit={handleSortAreas}
-      />
-
-      <BatchDeleteAreasModal
-        open={batchDeleteOpen}
-        areas={areas}
-        onClose={() => setBatchDeleteOpen(false)}
-        onConfirm={handleBatchDeleteAreas}
-      />
+      </div>
 
       <BatchAddTableModal
         open={batchAddOpen}
@@ -913,19 +635,15 @@ export default function TableManage({ onNavigate }: TableManageProps = {}) {
 
       <ConfirmModal
         open={confirmState !== null}
-        title={confirmState?.kind === 'area' ? '删除区域' : '删除桌台'}
+        title="删除桌台"
         message={
-          confirmState?.kind === 'area'
-            ? `确定删除区域「${confirmState.area.name}」吗？删除后不可恢复。`
-            : confirmState?.kind === 'table'
-              ? `确定删除桌台「${confirmState.row.name}」吗？删除后不可恢复。`
-              : ''
+          confirmState
+            ? `确定删除桌台「${confirmState.row.name}」吗？删除后不可恢复。`
+            : ''
         }
         confirmText="删除"
         onCancel={() => setConfirmState(null)}
-        onConfirm={
-          confirmState?.kind === 'area' ? confirmDeleteArea : confirmDeleteTable
-        }
+        onConfirm={confirmDeleteTable}
       />
 
       <Toast toast={toast} onClose={() => setToast(null)} />

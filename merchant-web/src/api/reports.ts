@@ -47,6 +47,7 @@ export interface DailyReportRow {
   revenue: number;
   avg_amount: number;
   table_count: number;
+  [key: string]: string | number;
 }
 
 export interface DailyReportResult {

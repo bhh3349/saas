@@ -12,6 +12,8 @@ export interface NavItem {
   /** 图标文件名（src/assets/svg 下的 SVG） */
   icon: string;
   sub?: SubMenu[];
+  /** 父级分组容器：只展开子菜单，不跳转页面（无独立页面） */
+  noPage?: boolean;
 }
 
 export interface NavGroup {
@@ -24,8 +26,12 @@ export type GroupKey = 'ops' | 'rpt';
 export type ViewKey =
   /* ===== 运营中心 ===== */
   | 'ops:home'
-  /* 餐厅管理 */
+  /* 餐厅管理（父级分组容器，无独立页面） */
+  | 'ops:restaurant'
+  /* 桌台管理 */
   | 'ops:restaurant:table'
+  /* 区域管理 */
+  | 'ops:restaurant:area'
   | 'ops:checkout'
   | 'ops:checkout:coupon'
   | 'ops:checkout:discount'
@@ -81,7 +87,8 @@ export function findViewMeta(key: ViewKey): { label: string; group: GroupKey } |
   };
   for (const g of NAV_GROUPS) {
     for (const item of g.items) {
-      if (item.key === key) return { label: item.label, group: g.key };
+      // noPage 父级只是分组容器，不作为页面 key 匹配
+      if (!item.noPage && item.key === key) return { label: item.label, group: g.key };
       if (item.sub) {
         const label = findInSub(item.sub);
         if (label) return { label, group: g.key };
@@ -98,11 +105,13 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { key: 'ops:home', label: '首页', icon: 'nav-home' },
       {
-        key: 'ops:restaurant:table',
+        key: 'ops:restaurant',
         label: '餐厅管理',
         icon: 'nav-restaurant',
+        noPage: true,
         sub: [
           { key: 'ops:restaurant:table', label: '桌台管理' },
+          { key: 'ops:restaurant:area', label: '区域管理' },
           {
             key: 'ops:checkout',
             label: '结账方式管理',

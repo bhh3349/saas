@@ -86,10 +86,6 @@ export default function DishAttribute() {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const setList = (tab: AttrTab, next: DishAttr[]) => {
-    setItems((prev) => ({ ...prev, [tab]: next }));
-  };
-
   const openAdd = () => {
     setEditing(null);
     setFormName('');

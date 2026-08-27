@@ -53,6 +53,15 @@ export default function Drawer({ group, activeView, onSelect }: DrawerProps) {
   };
 
   const handleItemClick = (item: NavItem) => {
+    // noPage 父级只展开 flyout，不跳转（无独立页面）
+    if (item.noPage) {
+      if (item.sub?.length) {
+        const el = itemRefs.current[item.key];
+        if (el) setFlyoutTop(el.offsetTop);
+        setHoveredKey(item.key);
+      }
+      return;
+    }
     onSelect(item.key, item.label);
   };
 

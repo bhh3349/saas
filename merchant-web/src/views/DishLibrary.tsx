@@ -21,8 +21,6 @@ import {
   sortDishesApi,
   dedupeDishesApi,
   type DishItem as ApiDish,
-  type DishSpecItem as ApiDishSpec,
-  type DishPayload,
   type ImportResult,
   type DedupeResult,
 } from '../api/dishes';
@@ -467,8 +465,8 @@ export default function DishLibrary() {
   /** 导入完成回调：刷新列表并提示结果 */
   const handleImported = async (result: ImportResult) => {
     await reloadDishes();
-    if (result.failed > 0) {
-      setToast({ type: 'error', text: `导入完成：成功 ${result.imported}，重复跳过 ${result.skipped}，失败 ${result.failed}` });
+    if (result.errors.length > 0) {
+      setToast({ type: 'error', text: `导入完成：成功 ${result.imported}，重复跳过 ${result.skipped}，失败 ${result.errors.length}` });
     } else if (result.skipped > 0) {
       setToast({ type: 'info', text: `导入完成：成功 ${result.imported}，重复跳过 ${result.skipped}` });
     } else {

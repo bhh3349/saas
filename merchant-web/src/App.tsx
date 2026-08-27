@@ -2,12 +2,13 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import TopBar from './components/TopBar';
 import Drawer from './components/Drawer';
 import TabsBar, { type TabItem } from './components/TabsBar';
-import FavPage from './components/FavStar';
+import { FavPage } from './components/FavStar';
 import AuthScreen from './views/AuthScreen';
 
 /* ---- 页面级懒加载：首屏只加载当前页与框架，其余页面按需拉取 ---- */
 const OpsHome = lazy(() => import('./views/OpsHome'));
 const TableManage = lazy(() => import('./views/TableManage'));
+const AreaManage = lazy(() => import('./views/AreaManage'));
 const ReportHome = lazy(() => import('./views/ReportHome'));
 const BizStats = lazy(() => import('./views/BizStats'));
 const PromoStats = lazy(() => import('./views/reports/PromoStats'));
@@ -28,6 +29,8 @@ const VoucherManage = lazy(() => import('./views/VoucherManage'));
 const DiscountManage = lazy(() => import('./views/DiscountManage'));
 const PrintAssign = lazy(() => import('./views/PrintAssign'));
 const StallManage = lazy(() => import('./views/StallManage'));
+const PrintStyle = lazy(() => import('./views/PrintStyle'));
+const PrintSettings = lazy(() => import('./views/PrintSettings'));
 const MustDish = lazy(() => import('./views/MustDish'));
 const BusinessMode = lazy(() => import('./views/BusinessMode'));
 const DishLibrary = lazy(() => import('./views/DishLibrary'));
@@ -36,6 +39,8 @@ const DishAttribute = lazy(() => import('./views/DishAttribute'));
 const StoreProfile = lazy(() => import('./views/StoreProfile'));
 const StaffManage = lazy(() => import('./views/StaffManage'));
 const RoleManage = lazy(() => import('./views/RoleManage'));
+const DeviceMonitor = lazy(() => import('./views/DeviceMonitor'));
+const OperationLog = lazy(() => import('./views/OperationLog'));
 const PlaceholderView = lazy(() => import('./views/PlaceholderView'));
 import { NAV_GROUPS, findViewMeta, type GroupKey, type ViewKey } from './data/navigation';
 import { getMeApi } from './api/auth';
@@ -358,10 +363,19 @@ export default function App() {
     switch (v) {
       case 'ops:home':
         return <OpsHome key={homeTick} onNavigate={handleSelect} />;
+      /* 防御：父级分组 key 不应作为页面渲染，回退到首页 */
+      case 'ops:restaurant':
+        return <OpsHome key={homeTick} onNavigate={handleSelect} />;
       case 'ops:restaurant:table':
         return (
           <FavPage viewKey="ops:restaurant:table">
             <TableManage onNavigate={handleSelect} />
+          </FavPage>
+        );
+      case 'ops:restaurant:area':
+        return (
+          <FavPage viewKey="ops:restaurant:area">
+            <AreaManage />
           </FavPage>
         );
       case 'ops:checkout':
@@ -392,6 +406,18 @@ export default function App() {
         return (
           <FavPage viewKey="ops:print:station">
             <StallManage />
+          </FavPage>
+        );
+      case 'ops:print:style':
+        return (
+          <FavPage viewKey="ops:print:style">
+            <PrintStyle />
+          </FavPage>
+        );
+      case 'ops:print:settings':
+        return (
+          <FavPage viewKey="ops:print:settings">
+            <PrintSettings />
           </FavPage>
         );
       case 'ops:business:must':
@@ -440,6 +466,18 @@ export default function App() {
         return (
           <FavPage viewKey="ops:archive:role">
             <RoleManage />
+          </FavPage>
+        );
+      case 'ops:system:device':
+        return (
+          <FavPage viewKey="ops:system:device">
+            <DeviceMonitor />
+          </FavPage>
+        );
+      case 'ops:system:log':
+        return (
+          <FavPage viewKey="ops:system:log">
+            <OperationLog />
           </FavPage>
         );
       case 'rpt:home':

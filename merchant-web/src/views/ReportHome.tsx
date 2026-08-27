@@ -32,7 +32,7 @@ const QUICK_ENTRIES: { key: ViewKey; label: string; tile: string }[] = [
 ];
 
 /** 报表中心首页：收藏的报表页快捷入口（排除默认已有的） */
-function buildFavEntries(): { key: ViewKey; label: string; fav: boolean }[] {
+function buildFavEntries(): { key: ViewKey; label: string; fav: boolean; tile?: string }[] {
   return getFavorites()
     .filter((k) => k.startsWith('rpt:') && k !== 'rpt:home')
     .map((k) => ({ key: k, label: findViewMeta(k)?.label ?? k, fav: true }))

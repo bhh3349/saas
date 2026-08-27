@@ -17,14 +17,6 @@ function formatQty(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-function fmtTime(s: string | null): string {
-  if (!s) return '—';
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '—';
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
 const modeText: Record<string, string> = { table: '堂食', ticket: '外带' };
 
 export default function DishDetail() {

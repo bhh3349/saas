@@ -308,6 +308,7 @@ export default function DiscountManage() {
     discount?: string;
     threshold?: string;
     reduce?: string;
+    reduceRules?: string;
     items?: string;
     plans?: string;
   }>({});
