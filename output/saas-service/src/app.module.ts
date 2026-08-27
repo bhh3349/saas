@@ -8,7 +8,9 @@ import { Table } from './entities/table.entity';
 import { Area } from './entities/area.entity';
 import { PaymentMethod } from './entities/payment-method.entity';
 import { Dish } from './entities/dish.entity';
+import { OperationLog } from './entities/operation-log.entity';
 import { Order } from './entities/order.entity';
+import { OrderRefund } from './entities/order-refund.entity';
 import { Shop } from './entities/shop.entity';
 import { Category } from './entities/category.entity';
 import { Attribute } from './entities/attribute.entity';
@@ -34,7 +36,7 @@ import { AreasModule } from './modules/areas/areas.module';
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: getConfig().dbPath,
-      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket],
+      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket, OrderRefund, OperationLog],
       // 开发期自动建表；生产可改为 migration 或预执行建表脚本
       synchronize: true,
     }),

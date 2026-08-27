@@ -303,7 +303,7 @@ export default function DishCategory() {
     setModal('batch');
   };
 
-  const submitBatch = () => {
+  const submitBatch = async () => {
     const names = batchNames.map((s) => s.trim()).filter(Boolean);
     if (!names.length) {
       setToast({ type: 'warning', text: '请输入至少一个分类名称' });

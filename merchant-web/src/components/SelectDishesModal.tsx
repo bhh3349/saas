@@ -60,7 +60,7 @@ export default function SelectDishesModal({
       try {
         const all: ApiDish[] = [];
         let page = 1;
-        const pageSize = 1000;
+        const pageSize = 100;
         let total = Number.POSITIVE_INFINITY;
         while (all.length < total) {
           const res = await listDishesApi({ page, page_size: pageSize });

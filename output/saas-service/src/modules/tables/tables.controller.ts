@@ -42,6 +42,8 @@ export class AdminTablesController {
     return this.tablesService.importTables(user, dto.items);
   }
 
+  /** 桌台列表（老板/财务只读） */
+  @Roles(UserRole.Boss, UserRole.Finance)
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: ListTablesDto) {
     return this.tablesService.list(

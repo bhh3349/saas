@@ -43,6 +43,12 @@ export class AdminDishesController {
     return this.dishesService.importDishes(user, dto);
   }
 
+  /** 去重：按 名称+分类+类型+规格 合并重复菜品（同规格完全重复删除、多规格合并进同一菜品） */
+  @Post('dedupe')
+  dedupe(@CurrentUser() user: AuthUser) {
+    return this.dishesService.dedupe(user);
+  }
+
   /** 批量保存排序（ids 顺序即排序） */
   @Post('sort')
   sort(@CurrentUser() user: AuthUser, @Body() dto: SortDishesDto) {

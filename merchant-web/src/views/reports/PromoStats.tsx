@@ -5,6 +5,7 @@ import ReportToolbar from '../../components/report/ReportToolbar';
 import { useToast } from '../../components/report/useToast';
 import StatCard from '../../components/StatCard';
 import Toast from '../../components/Toast';
+import FavStar from '../../components/FavStar';
 
 interface PromoRow {
   name: string;
@@ -56,6 +57,7 @@ export default function PromoStats() {
       <div className="page-head">
         <h1 className="page-title">促销活动统计</h1>
         <div className="page-head-right">
+          <FavStar viewKey="rpt:promo-stats" />
           <span className="hint-text">按促销活动聚合优惠金额与参与订单（口径为已结账 + 挂账订单）</span>
         </div>
       </div>

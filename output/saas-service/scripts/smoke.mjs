@@ -151,7 +151,7 @@ async function main() {
   console.log('=== B1 saas-service smoke ===');
 
   // 1. 拉起服务
-  await ensureService(3100, PLATFORM_DIR, { PORT: '3100' });
+  await ensureService(3100, PLATFORM_DIR, { PORT: '3100', SEED_OPERATOR_PASSWORD: 'admin123456' });
   await ensureService(3200, SAAS_DIR, {
     PORT: '3200',
     PLATFORM_INTERNAL_BASE_URL: PLATFORM_URL,

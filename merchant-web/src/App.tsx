@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import TopBar from './components/TopBar';
 import Drawer from './components/Drawer';
 import TabsBar, { type TabItem } from './components/TabsBar';
+import FavPage from './components/FavStar';
 import AuthScreen from './views/AuthScreen';
 
 /* ---- 页面级懒加载：首屏只加载当前页与框架，其余页面按需拉取 ---- */
@@ -9,6 +10,19 @@ const OpsHome = lazy(() => import('./views/OpsHome'));
 const TableManage = lazy(() => import('./views/TableManage'));
 const ReportHome = lazy(() => import('./views/ReportHome'));
 const BizStats = lazy(() => import('./views/BizStats'));
+const PromoStats = lazy(() => import('./views/reports/PromoStats'));
+const AreaTableStats = lazy(() => import('./views/reports/AreaTableStats'));
+const CompareReport = lazy(() => import('./views/reports/CompareReport'));
+const DishSalesStats = lazy(() => import('./views/reports/DishSalesStats'));
+const DishDiscountStats = lazy(() => import('./views/reports/DishDiscountStats'));
+const DishDetail = lazy(() => import('./views/reports/DishDetail'));
+const DishRefundStats = lazy(() => import('./views/reports/DishRefundStats'));
+const InStoreOrders = lazy(() => import('./views/reports/InStoreOrders'));
+const SensitiveStats = lazy(() => import('./views/reports/SensitiveStats'));
+const SensitiveDetail = lazy(() => import('./views/reports/SensitiveDetail'));
+const IncomeDiscountStats = lazy(() => import('./views/reports/IncomeDiscountStats'));
+const IncomeCouponStats = lazy(() => import('./views/reports/IncomeCouponStats'));
+const IncomeDiscountDetail = lazy(() => import('./views/reports/IncomeDiscountDetail'));
 const CheckoutManage = lazy(() => import('./views/CheckoutManage'));
 const VoucherManage = lazy(() => import('./views/VoucherManage'));
 const DiscountManage = lazy(() => import('./views/DiscountManage'));
@@ -343,41 +357,127 @@ export default function App() {
   const renderView = (v: ViewKey): React.ReactNode => {
     switch (v) {
       case 'ops:home':
-        return <OpsHome key={homeTick} />;
+        return <OpsHome key={homeTick} onNavigate={handleSelect} />;
       case 'ops:restaurant:table':
-        return <TableManage onNavigate={handleSelect} />;
+        return (
+          <FavPage viewKey="ops:restaurant:table">
+            <TableManage onNavigate={handleSelect} />
+          </FavPage>
+        );
       case 'ops:checkout':
-        return <CheckoutManage />;
+        return (
+          <FavPage viewKey="ops:checkout">
+            <CheckoutManage />
+          </FavPage>
+        );
       case 'ops:checkout:coupon':
-        return <VoucherManage />;
+        return (
+          <FavPage viewKey="ops:checkout:coupon">
+            <VoucherManage />
+          </FavPage>
+        );
       case 'ops:checkout:discount':
-        return <DiscountManage />;
+        return (
+          <FavPage viewKey="ops:checkout:discount">
+            <DiscountManage />
+          </FavPage>
+        );
       case 'ops:print:assign':
-        return <PrintAssign />;
+        return (
+          <FavPage viewKey="ops:print:assign">
+            <PrintAssign />
+          </FavPage>
+        );
       case 'ops:print:station':
-        return <StallManage />;
+        return (
+          <FavPage viewKey="ops:print:station">
+            <StallManage />
+          </FavPage>
+        );
       case 'ops:business:must':
-        return <MustDish />;
+        return (
+          <FavPage viewKey="ops:business:must">
+            <MustDish />
+          </FavPage>
+        );
       case 'ops:business:mode':
-        return <BusinessMode />;
+        return (
+          <FavPage viewKey="ops:business:mode">
+            <BusinessMode />
+          </FavPage>
+        );
       case 'ops:dish:library':
-        return <DishLibrary />;
+        return (
+          <FavPage viewKey="ops:dish:library">
+            <DishLibrary />
+          </FavPage>
+        );
       case 'ops:dish:category':
-        return <DishCategory />;
+        return (
+          <FavPage viewKey="ops:dish:category">
+            <DishCategory />
+          </FavPage>
+        );
       case 'ops:dish:attribute':
-        return <DishAttribute />;
+        return (
+          <FavPage viewKey="ops:dish:attribute">
+            <DishAttribute />
+          </FavPage>
+        );
       case 'ops:archive:store':
-        return <StoreProfile />;
+        return (
+          <FavPage viewKey="ops:archive:store">
+            <StoreProfile />
+          </FavPage>
+        );
       case 'ops:archive:staff':
-        return <StaffManage />;
+        return (
+          <FavPage viewKey="ops:archive:staff">
+            <StaffManage />
+          </FavPage>
+        );
       case 'ops:archive:role':
-        return <RoleManage />;
+        return (
+          <FavPage viewKey="ops:archive:role">
+            <RoleManage />
+          </FavPage>
+        );
       case 'rpt:home':
-        return <ReportHome />;
+        return <ReportHome onNavigate={handleSelect} />;
       case 'rpt:biz-stats':
         return <BizStats />;
+      case 'rpt:promo-stats':
+        return <PromoStats />;
+      case 'rpt:area-table-stats':
+        return <AreaTableStats />;
+      case 'rpt:compare':
+        return <CompareReport />;
+      case 'rpt:dish-sales':
+        return <DishSalesStats />;
+      case 'rpt:dish-discount':
+        return <DishDiscountStats />;
+      case 'rpt:dish-detail':
+        return <DishDetail />;
+      case 'rpt:dish-refund':
+        return <DishRefundStats />;
+      case 'rpt:in-store-orders':
+        return <InStoreOrders />;
+      case 'rpt:sensitive-stats':
+        return <SensitiveStats />;
+      case 'rpt:sensitive-detail':
+        return <SensitiveDetail />;
+      case 'rpt:income-discount':
+        return <IncomeDiscountStats />;
+      case 'rpt:income-coupon':
+        return <IncomeCouponStats />;
+      case 'rpt:income-discount-detail':
+        return <IncomeDiscountDetail />;
       default:
-        return <PlaceholderView title={pageLabel} />;
+        return (
+          <FavPage viewKey={v}>
+            <PlaceholderView title={pageLabel} />
+          </FavPage>
+        );
     }
   };
 

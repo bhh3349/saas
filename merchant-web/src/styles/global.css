@@ -1490,6 +1490,71 @@ button {
   text-align: center;
 }
 
+/* 收藏的快捷入口：金色星标块 */
+.quick-tile.fav {
+  background: linear-gradient(135deg, #f7c94b, #e8a400);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.quick-tile.fav .icon {
+  width: 20px;
+  height: 20px;
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+/* ---------------- 页面收藏星标 ---------------- */
+
+/* 子页包装容器：星标悬浮在页头右上角（用于页头右侧无操作区的页面） */
+.fav-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fav-page > .page {
+  flex: 1;
+  min-height: 0;
+}
+.fav-page > .fav-star {
+  position: absolute;
+  top: 26px;
+  right: 24px;
+  z-index: 6;
+}
+
+.fav-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, transform 0.15s;
+}
+.fav-star .icon {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+}
+.fav-star:hover {
+  background: var(--color-surface3);
+  color: #e8a400;
+  transform: scale(1.06);
+}
+.fav-star.active {
+  color: #e8a400;
+}
+.fav-star.active:hover {
+  background: rgba(232, 164, 0, 0.12);
+}
+
 /* ---------------- 视图：TableManage ---------------- */
 
 /* 外层内容卡片：统一背景，包裹 tab / tip / toolbar / 表格 */
@@ -3646,6 +3711,148 @@ button.page-num:hover:not(.active) {
   margin-top: 6px;
   font-size: 12px;
   color: var(--color-ink-tertiary);
+}
+
+/* 导入进度 / 结果卡片 */
+.batch-import-progress {
+  padding: 26px 20px 20px;
+  text-align: center;
+}
+
+.batch-import-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--color-ink);
+  margin-bottom: 12px;
+}
+
+.batch-import-progress-bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-surface3);
+  overflow: hidden;
+}
+
+.batch-import-progress-bar-inner {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-primary);
+  transition: width 0.25s ease;
+}
+
+.batch-import-progress-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin-top: 16px;
+  font-size: 14px;
+  color: var(--color-ink);
+}
+
+.batch-import-progress-stats .ok {
+  color: var(--color-success);
+}
+
+.batch-import-progress-stats .warn {
+  color: var(--color-warning);
+}
+
+.batch-import-progress-stats .err {
+  color: var(--color-danger);
+}
+
+/* 导入完成结果 */
+.batch-import-result-icon {
+  width: 52px;
+  height: 52px;
+  margin: 4px auto 12px;
+  border-radius: 50%;
+  background: var(--color-success);
+  color: #fff;
+  font-size: 26px;
+  line-height: 52px;
+  text-align: center;
+}
+
+.batch-import-result-icon.has-error {
+  background: var(--color-danger);
+}
+
+.batch-import-result-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: 8px;
+}
+
+.batch-import-error-list {
+  margin-top: 18px;
+  text-align: left;
+  border-top: 1px solid var(--color-hairline);
+  padding-top: 12px;
+}
+
+.batch-import-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink);
+  margin-bottom: 8px;
+}
+
+.batch-import-error-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--color-hairline);
+  border-radius: 6px;
+  background: var(--color-surface2);
+}
+
+.batch-import-error-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.batch-import-error-item:last-child {
+  border-bottom: none;
+}
+
+.batch-import-error-name {
+  flex: 0 0 auto;
+  max-width: 30%;
+  font-weight: 600;
+  color: var(--color-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-import-error-spec {
+  flex: 0 0 auto;
+  max-width: 120px;
+  color: var(--color-ink-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-import-error-reason {
+  flex: 1;
+  min-width: 0;
+  color: var(--color-danger);
+}
+
+.batch-import-error-more {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--color-ink-tertiary);
+  text-align: center;
 }
 
 /* ---------------- 视图：结账方式管理 ---------------- */
@@ -7036,4 +7243,84 @@ button.page-num:hover:not(.active) {
   font-size: 13px;
   color: var(--color-ink);
   cursor: pointer;
+}
+
+/* ===== 报表中心（14 页） ===== */
+.report-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.report-toolbar .filter-group {
+  flex-wrap: wrap;
+}
+.report-select {
+  height: 36px;
+}
+.report-summary-row {
+  background: var(--color-canvas-muted, #f7f8fa);
+  font-weight: 600;
+}
+.report-summary-row td {
+  border-top: 1px solid var(--color-hairline);
+  white-space: nowrap;
+}
+.compare-range-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-ink-tertiary);
+  background: var(--color-canvas-muted, #f7f8fa);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.compare-range-hint b {
+  color: var(--color-ink);
+}
+.compare-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.compare-label {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+}
+.compare-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--color-ink);
+}
+.compare-unit {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-ink-tertiary);
+}
+.compare-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.compare-trend {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.compare-trend.up {
+  color: #e23e3e;
+  background: rgba(226, 62, 62, 0.08);
+}
+.compare-trend.down {
+  color: #1aa37a;
+  background: rgba(26, 163, 122, 0.08);
+}
+.compare-prev {
+  color: var(--color-ink-tertiary);
 }

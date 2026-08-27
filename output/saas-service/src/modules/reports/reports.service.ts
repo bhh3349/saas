@@ -277,6 +277,64 @@ export class ReportsService {
     return this.summaryBetween(user, start, end);
   }
 
+  /** 按日营业统计：区间内每天一条（含空档日） */
+  async daily(
+    user: AuthUser,
+    from?: string,
+    to?: string,
+  ): Promise<{
+    from: string;
+    to: string;
+    items: {
+      date: string;
+      order_count: number;
+      revenue: number;
+      avg_amount: number;
+      table_count: number;
+    }[];
+  }> {
+    const { start, end } = dayRange(from, to);
+    const orders = await this.orderRepo.find({
+      where: { shop_id: user.shopId, settled_at: Between(start, end) },
+    });
+    const completed = orders.filter((o) => o.status === OrderStatus.Completed);
+    const map = new Map<
+      string,
+      { order_count: number; revenue: number; tables: Set<number> }
+    >();
+    for (const o of completed) {
+      if (!o.settled_at) continue;
+      const d = fmtDay(o.settled_at);
+      const cur = map.get(d) ?? { order_count: 0, revenue: 0, tables: new Set<number>() };
+      cur.order_count += 1;
+      cur.revenue += o.paid_amount;
+      if (o.table_id) cur.tables.add(o.table_id);
+      map.set(d, cur);
+    }
+    const items: {
+      date: string;
+      order_count: number;
+      revenue: number;
+      avg_amount: number;
+      table_count: number;
+    }[] = [];
+    const cursor = new Date(start);
+    while (cursor < end) {
+      const d = fmtDay(cursor);
+      const cur = map.get(d);
+      const revenue = cur ? cur.revenue / 100 : 0;
+      items.push({
+        date: d,
+        order_count: cur ? cur.order_count : 0,
+        revenue,
+        avg_amount: cur && cur.order_count ? +((revenue / cur.order_count).toFixed(2)) : 0,
+        table_count: cur ? cur.tables.size : 0,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return { from: fmtDay(start), to: fmtDay(new Date(end.getTime() - 1)), items };
+  }
+
   /** 菜品销售统计：按菜品（含规格）聚合 */
   async dishSales(
     user: AuthUser,

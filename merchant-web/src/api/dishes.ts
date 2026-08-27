@@ -41,6 +41,34 @@ export interface DishPayload {
   sort_order?: number
 }
 
+/** 导入单行（一个规格一行；名称 + 分类 + 类型 + 规格 组合唯一） */
+export interface ImportDishRow {
+  name: string
+  category: string
+  type: string
+  /** 单价（元） */
+  price: number
+  spec: string
+  status: string
+}
+
+/** 导入失败明细 */
+export interface ImportRowError {
+  name: string
+  category: string
+  type: string
+  spec: string
+  reason: string
+}
+
+/** 导入结果 */
+export interface ImportResult {
+  total: number
+  imported: number
+  skipped: number
+  errors: ImportRowError[]
+}
+
 /** GET /admin/dishes 分页列表 */
 export function listDishesApi(params: {
   page?: number
@@ -62,12 +90,34 @@ export function createDishApi(data: DishPayload): Promise<DishItem> {
   return request<DishItem>('/admin/dishes', { method: 'POST', body: data })
 }
 
-/** POST /admin/dishes/import 批量导入菜品 */
-export function importDishesApi(items: DishPayload[]): Promise<{ count: number }> {
-  return request<{ count: number }>('/admin/dishes/import', {
+/** POST /admin/dishes/import 批量导入菜品（规格行） */
+export function importDishesApi(items: ImportDishRow[]): Promise<ImportResult> {
+  return request<ImportResult>('/admin/dishes/import', {
     method: 'POST',
     body: { items },
   })
+}
+
+export interface DedupeDetail {
+  name: string;
+  category: string | null;
+  type: string;
+  keepId: number;
+  mergedSpecs: number;
+  duplicateRows: number;
+  priceConflict: boolean;
+}
+
+export interface DedupeResult {
+  mergedGroups: number;
+  deleted: number;
+  conflictPrices: number;
+  details: DedupeDetail[];
+}
+
+/** POST /admin/dishes/dedupe 去重清理（按名称+分类+类型+规格合并重复菜品） */
+export function dedupeDishesApi(): Promise<DedupeResult> {
+  return request('/admin/dishes/dedupe', { method: 'POST' })
 }
 
 /** POST /admin/dishes/sort 批量保存排序（ids 顺序即排序） */
@@ -84,7 +134,7 @@ export function updateDishApi(id: number, data: Partial<DishPayload>): Promise<D
 export async function listAllDishesApi(): Promise<DishItem[]> {
   const all: DishItem[] = [];
   let page = 1;
-  const pageSize = 1000;
+  const pageSize = 100;
   let total = Number.POSITIVE_INFINITY;
   while (all.length < total) {
     const res = await listDishesApi({ page, page_size: pageSize });

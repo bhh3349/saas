@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ListOrdersDto } from './dto/list-orders.dto';
+import { RefundOrderDto } from './dto/refund-order.dto';
 import { SettleOrderDto } from './dto/settle-order.dto';
 import { OrdersService } from './orders.service';
 
@@ -63,7 +64,7 @@ export class OrdersController {
     return this.ordersService.reject(user, id);
   }
 
-  /** 结账记账（释放桌台） */
+  /** 结账记账（支持优惠 / 改价，释放桌台） */
   @Post(':id/settle')
   settle(
     @CurrentUser() user: AuthUser,
@@ -71,6 +72,16 @@ export class OrdersController {
     @Body() dto: SettleOrderDto,
   ) {
     return this.ordersService.settle(user, id, dto);
+  }
+
+  /** 退菜（订单内菜品退款，扣减应付 / 实收） */
+  @Post(':id/refund')
+  refund(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RefundOrderDto,
+  ) {
+    return this.ordersService.refund(user, id, dto);
   }
 
   /** 免单（金额记 0，释放桌台） */

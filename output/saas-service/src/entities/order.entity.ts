@@ -57,6 +57,22 @@ export class Order {
   @Column({ type: 'integer', default: 0 })
   change_amount: number;
 
+  /** 优惠金额（分）：折扣 / 优惠券 / 改价 / 免单 */
+  @Column({ type: 'integer', default: 0 })
+  discount_amount: number;
+
+  /** 优惠类型：discount 折扣 / voucher 优惠券 / price_change 改价 / free 免单 */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  discount_type: string | null;
+
+  /** 优惠名称快照（如券名 / 满减活动名） */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  discount_name: string | null;
+
+  /** 关联优惠券 id（shop_buckets.voucher 中的 id） */
+  @Column({ type: 'integer', nullable: true })
+  voucher_id: number | null;
+
   /** 结账方式 id */
   @Column({ type: 'integer', nullable: true })
   payment_method_id: number | null;

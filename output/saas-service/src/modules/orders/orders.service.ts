@@ -10,10 +10,13 @@ import {
   TableStatus,
 } from '../../common/enums';
 import { Dish } from '../../entities/dish.entity';
+import { OperationLog, SensitiveAction } from '../../entities/operation-log.entity';
 import { Order } from '../../entities/order.entity';
+import { OrderRefund } from '../../entities/order-refund.entity';
 import { PaymentMethod } from '../../entities/payment-method.entity';
 import { Table } from '../../entities/table.entity';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
+import { RefundOrderDto } from './dto/refund-order.dto';
 import { SettleOrderDto } from './dto/settle-order.dto';
 
 export interface OrderItemSnapshot {
@@ -39,6 +42,14 @@ export interface OrderItem {
   paid_amount: number;
   /** 找零（元） */
   change_amount: number;
+  /** 优惠金额（元） */
+  discount_amount: number;
+  /** 优惠类型：discount / voucher / price_change */
+  discount_type: string | null;
+  /** 优惠名称 */
+  discount_name: string | null;
+  /** 关联优惠券 id */
+  voucher_id: number | null;
   payment_method_id: number | null;
   payment_method_name: string | null;
   remark: string;
@@ -221,6 +232,14 @@ export class OrdersService {
       order.status = OrderStatus.Void;
       await orderRepo.save(order);
       await this.releaseTable(manager, order);
+      await this.writeLog(
+        manager,
+        user,
+        SensitiveAction.VoidOrder,
+        order.id,
+        order.total_amount,
+        `拒单作废 ¥${centsToYuan(order.total_amount)}`,
+      );
       return this.toItem(order);
     });
   }
@@ -228,7 +247,9 @@ export class OrdersService {
   /**
    * 结账记账（pending / confirmed / on_account → completed）
    * - 校验结账方式（本店启用中）
-   * - 实收缺省 = 应付；大于应付自动记找零；小于应付按实收记账
+   * - 实收缺省 = 应付 - 优惠；大于应收自动记找零；小于应收按实收记账
+   * - 优惠：传 discount_amount 时记录优惠（折扣 / 券）；未传但少收视为改价
+   * - 优惠 / 改价记敏感操作日志
    * - 释放桌台
    */
   async settle(user: AuthUser, id: number, dto: SettleOrderDto): Promise<OrderItem> {
@@ -253,19 +274,141 @@ export class OrdersService {
       if (!pay.enabled) {
         throw new BusinessException('该结账方式已停用');
       }
-      const paid =
+
+      const total = order.total_amount;
+      let paid =
         dto.paid_amount !== undefined
           ? yuanToCents(dto.paid_amount)
-          : order.total_amount;
+          : total;
+      let discount = 0;
+      let discountType: string | null = null;
+      let discountName: string | null = null;
+      let voucherId: number | null = null;
+
+      if (dto.discount_amount !== undefined) {
+        discount = Math.min(Math.max(0, Math.round(dto.discount_amount * 100)), total);
+        discountType = dto.discount_type || 'discount';
+        discountName = dto.discount_name || null;
+        voucherId = dto.voucher_id ?? null;
+        if (dto.paid_amount === undefined) paid = Math.max(0, total - discount);
+      } else if (dto.paid_amount !== undefined && paid < total) {
+        // 未声明优惠但少收 → 视为改价
+        discount = total - paid;
+        discountType = 'price_change';
+        discountName = '改价';
+      }
+
       order.status = OrderStatus.Completed;
       order.paid_amount = paid;
-      order.change_amount = Math.max(0, paid - order.total_amount);
+      order.discount_amount = discount;
+      order.discount_type = discountType;
+      order.discount_name = discountName;
+      order.voucher_id = voucherId;
+      order.change_amount = Math.max(0, paid - (total - discount));
       order.payment_method_id = pay.id;
       order.payment_method_name = pay.name;
       if (dto.remark !== undefined) order.remark = dto.remark;
       order.settled_at = new Date();
       await orderRepo.save(order);
       await this.releaseTable(manager, order);
+
+      // 敏感操作日志：优惠券核销 / 改价优惠
+      if (discount > 0) {
+        if (discountType === 'voucher') {
+          await this.writeLog(
+            manager,
+            user,
+            SensitiveAction.Voucher,
+            order.id,
+            discount,
+            `优惠券核销${discountName ? `-${discountName}` : ''}，优惠 ¥${centsToYuan(discount)}`,
+          );
+        } else {
+          await this.writeLog(
+            manager,
+            user,
+            SensitiveAction.PriceChange,
+            order.id,
+            discount,
+            `${discountName || '改价'}，优惠 ¥${centsToYuan(discount)}`,
+          );
+        }
+      }
+      return this.toItem(order);
+    });
+  }
+
+  /**
+   * 退菜（订单内菜品退款）
+   * - 扣减订单菜品快照数量 / 金额，同步扣减应付与实收
+   * - 记录退菜明细 + 敏感操作日志
+   * - void 订单不可退菜；其余状态均可
+   */
+  async refund(user: AuthUser, id: number, dto: RefundOrderDto): Promise<OrderItem> {
+    if (!dto.items || dto.items.length === 0) {
+      throw new BusinessException('请选择要退的菜品');
+    }
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(Order);
+      const refundRepo = manager.getRepository(OrderRefund);
+      const order = await this.findInShop(orderRepo, user, id);
+      if (order.status === OrderStatus.Void) {
+        throw new BusinessException('已作废订单不可退菜');
+      }
+
+      const snap: OrderItemSnapshot[] = JSON.parse(order.items || '[]');
+      const refundRows: OrderRefund[] = [];
+      let refundTotal = 0;
+
+      for (const it of dto.items) {
+        const line = snap.find(
+          (s) =>
+            s.dish_id === it.dish_id &&
+            ((it.spec_name && s.spec_name === it.spec_name) ||
+              (!it.spec_name && !s.spec_name)),
+        );
+        if (!line) {
+          throw new BusinessException('退菜项不存在于订单中');
+        }
+        if (it.qty > line.qty) {
+          throw new BusinessException(`「${line.name}」可退数量不足`);
+        }
+        line.qty -= it.qty;
+        line.amount -= line.unit_price * it.qty;
+        const amount = line.unit_price * it.qty;
+        refundTotal += amount;
+        refundRows.push(
+          refundRepo.create({
+            shop_id: user.shopId,
+            order_id: order.id,
+            order_no: order.order_no,
+            dish_id: it.dish_id,
+            name: line.name,
+            spec_name: line.spec_name,
+            unit_price: line.unit_price,
+            qty: it.qty,
+            amount,
+            reason: it.reason || dto.reason || '',
+            operator_id: user.userId,
+            operator_name: user.phone,
+          }),
+        );
+      }
+
+      order.items = JSON.stringify(snap.filter((s) => s.qty > 0));
+      order.total_amount = Math.max(0, order.total_amount - refundTotal);
+      order.paid_amount = Math.max(0, order.paid_amount - refundTotal);
+      await orderRepo.save(order);
+      await refundRepo.save(refundRows);
+
+      await this.writeLog(
+        manager,
+        user,
+        SensitiveAction.Refund,
+        order.id,
+        refundTotal,
+        `退菜 ${refundRows.length} 项，退款 ¥${centsToYuan(refundTotal)}`,
+      );
       return this.toItem(order);
     });
   }
@@ -286,12 +429,23 @@ export class OrdersService {
       }
       order.status = OrderStatus.Completed;
       order.paid_amount = 0;
+      order.discount_amount = order.total_amount;
+      order.discount_type = 'free';
+      order.discount_name = '免单';
       order.change_amount = 0;
       order.payment_method_id = null;
       order.payment_method_name = '免单';
       order.settled_at = new Date();
       await orderRepo.save(order);
       await this.releaseTable(manager, order);
+      await this.writeLog(
+        manager,
+        user,
+        SensitiveAction.FreeOrder,
+        order.id,
+        order.total_amount,
+        `整单免单 ¥${centsToYuan(order.total_amount)}`,
+      );
       return this.toItem(order);
     });
   }
@@ -402,11 +556,39 @@ export class OrdersService {
       total_amount: centsToYuan(o.total_amount),
       paid_amount: centsToYuan(o.paid_amount),
       change_amount: centsToYuan(o.change_amount),
+      discount_amount: centsToYuan(o.discount_amount || 0),
+      discount_type: o.discount_type,
+      discount_name: o.discount_name,
+      voucher_id: o.voucher_id,
       payment_method_id: o.payment_method_id,
       payment_method_name: o.payment_method_name,
       remark: o.remark,
       created_at: o.created_at,
       settled_at: o.settled_at,
     };
+  }
+
+  /** 写敏感操作日志（事务内） */
+  private async writeLog(
+    manager: EntityManager,
+    user: AuthUser,
+    action: SensitiveAction,
+    targetId: number | null,
+    amount: number,
+    detail: string,
+  ): Promise<void> {
+    const repo = manager.getRepository(OperationLog);
+    await repo.save(
+      repo.create({
+        shop_id: user.shopId,
+        user_id: user.userId,
+        user_name: user.phone,
+        action,
+        target_type: 'order',
+        target_id: targetId,
+        amount,
+        detail,
+      }),
+    );
   }
 }

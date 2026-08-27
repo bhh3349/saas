@@ -18,6 +18,8 @@ export default defineConfig({
       '/auth': { target: 'http://127.0.0.1:3200', changeOrigin: true },
       '/admin': { target: 'http://127.0.0.1:3200', changeOrigin: true },
       '/tables': { target: 'http://127.0.0.1:3200', changeOrigin: true },
+      // 报表中心（14 页）后端接口
+      '/reports': { target: 'http://127.0.0.1:3200', changeOrigin: true },
     },
   },
   build: {

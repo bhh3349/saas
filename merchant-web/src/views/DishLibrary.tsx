@@ -7,7 +7,7 @@ import CommonSelect from '../components/CommonSelect';
 import Pagination, { DEFAULT_PAGE_SIZE } from '../components/Pagination';
 import SortDishModal, { type SortDishItem } from '../components/SortDishModal';
 import Icon from '../components/Icon';
-import BatchImportDishModal, { type ImportDishRow } from '../components/BatchImportDishModal';
+import BatchImportDishModal from '../components/BatchImportDishModal';
 import { exportAoaToXlsx } from '../utils/excel';
 import { getStoredShop } from '../api/http';
 import CreateSetMealModal from '../components/CreateSetMealModal';
@@ -18,11 +18,13 @@ import {
   updateDishApi,
   updateDishStatusApi,
   deleteDishApi,
-  importDishesApi,
   sortDishesApi,
+  dedupeDishesApi,
   type DishItem as ApiDish,
   type DishSpecItem as ApiDishSpec,
   type DishPayload,
+  type ImportResult,
+  type DedupeResult,
 } from '../api/dishes';
 
 /** 菜品类型 */
@@ -156,14 +158,6 @@ function toLocalDish(item: ApiDish): Dish {
   };
 }
 
-/** 页面规格 → 后端规格（加价 = 规格售价 - 基础价） */
-function toApiSpecs(specs: DishSpec[] | undefined, basePrice: number): ApiDishSpec[] {
-  return (specs ?? []).map((s) => ({
-    name: s.spec,
-    price_delta: Math.round((s.price - basePrice) * 100) / 100,
-  }));
-}
-
 /** 价格展示：0 视为未设置 */
 function formatPrice(n: number): string {
   return n > 0 ? `¥${n.toFixed(2)}` : '-';
@@ -185,6 +179,9 @@ export default function DishLibrary() {
   const [delId, setDelId] = useState<string | null>(null);
   const [batchDelOpen, setBatchDelOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [dedupeOpen, setDedupeOpen] = useState(false);
+  const [dedupeResult, setDedupeResult] = useState<DedupeResult | null>(null);
+  const [dedupeLoading, setDedupeLoading] = useState(false);
   const [setMealOpen, setSetMealOpen] = useState(false);
   const [batchAction, setBatchAction] = useState('');
 
@@ -259,7 +256,7 @@ export default function DishLibrary() {
     try {
       const all: Dish[] = [];
       let page = 1;
-      const pageSize = 1000;
+      const pageSize = 100;
       let total = Number.POSITIVE_INFINITY;
       while (all.length < total) {
         const res = await listDishesApi({ page, page_size: pageSize });
@@ -467,60 +464,36 @@ export default function DishLibrary() {
     });
   };
 
-  /** 导入菜品提交：按名称分组，同一名称下规格不同视为多规格合并为一个菜品 */
-  const handleImportSubmit = async (rows: ImportDishRow[]) => {
-    const groups = new Map<string, ImportDishRow[]>();
-    rows.forEach((r) => {
-      const arr = groups.get(r.name);
-      if (arr) arr.push(r);
-      else groups.set(r.name, [r]);
-    });
-
-    const now = Date.now();
-    let counter = 0;
-    const gen = () => {
-      const suffix = counter++;
-      return { code: `D${now}_${suffix}`, spec_code: `S${now}_${suffix}` };
-    };
-
-    const payloads: DishPayload[] = [];
-    let skip = 0;
-    groups.forEach((group) => {
-      const first = group[0];
-      if (dishes.some((d) => d.name === first.name)) {
-        skip++;
-        return;
-      }
-      const { code, spec_code } = gen();
-      const multi = new Set(group.map((r) => r.spec)).size > 1;
-      payloads.push({
-        name: first.name,
-        category: first.category,
-        type: first.type as DishType,
-        price: first.price,
-        code,
-        spec_code,
-        ...(multi
-          ? { specs: toApiSpecs(group.map((r) => ({ spec: r.spec, price: r.price })), first.price) }
-          : {}),
-      });
-    });
-
-    if (payloads.length === 0) {
-      setToast({ type: 'error', text: `导入失败：${skip} 个菜品名称与现有菜单重复` });
-      return false;
+  /** 导入完成回调：刷新列表并提示结果 */
+  const handleImported = async (result: ImportResult) => {
+    await reloadDishes();
+    if (result.failed > 0) {
+      setToast({ type: 'error', text: `导入完成：成功 ${result.imported}，重复跳过 ${result.skipped}，失败 ${result.failed}` });
+    } else if (result.skipped > 0) {
+      setToast({ type: 'info', text: `导入完成：成功 ${result.imported}，重复跳过 ${result.skipped}` });
+    } else {
+      setToast({ type: 'success', text: `导入完成：成功 ${result.imported} 行` });
     }
+    setImportOpen(false);
+  };
+
+  /** 去重清理：按 名称+分类+类型+规格 合并重复菜品，输出每组处理明细 */
+  const confirmDedupe = async () => {
+    setDedupeOpen(false);
+    setDedupeLoading(true);
     try {
-      await importDishesApi(payloads);
-      setToast({
-        type: 'success',
-        text: `成功导入 ${payloads.length} 个菜品${skip > 0 ? `，跳过 ${skip} 个重名菜品` : ''}`,
-      });
+      const res = await dedupeDishesApi();
       await reloadDishes();
-      return true;
+      setDedupeResult(res);
+      if (res.deleted === 0) {
+        setToast({ type: 'success', text: '去重完成：未发现重复菜品' });
+      } else {
+        setToast({ type: 'success', text: `去重完成：合并 ${res.mergedGroups} 组，删除重复菜品 ${res.deleted} 条` });
+      }
     } catch (e) {
-      setToast({ type: 'error', text: (e as Error).message || '导入失败' });
-      return false;
+      setToast({ type: 'error', text: (e as Error).message || '去重失败' });
+    } finally {
+      setDedupeLoading(false);
     }
   };
 
@@ -598,6 +571,9 @@ export default function DishLibrary() {
         </button>
         <button className="tm-btn tm-btn-default" type="button" onClick={handleExportDishes}>
           导出菜品
+        </button>
+        <button className="tm-btn tm-btn-default" type="button" onClick={() => setDedupeOpen(true)}>
+          去重清理
         </button>
         {batchMode && (
           <button className="tm-btn tm-btn-primary" type="button" onClick={exitBatchMode}>
@@ -1159,6 +1135,75 @@ export default function DishLibrary() {
         onConfirm={confirmBatchDelete}
         onCancel={() => setBatchDelOpen(false)}
       />
+      <ConfirmModal
+        open={dedupeOpen}
+        title="去重清理"
+        message="系统将按「名称 + 分类 + 类型 + 规格」合并重复菜品：不同规格合并进同一菜品，完全重复的自动删除，套餐/退菜记录中的引用会自动修正。是否继续？"
+        onConfirm={confirmDedupe}
+        onCancel={() => setDedupeOpen(false)}
+      />
+      {dedupeResult && (
+        <div className="modal-mask" onClick={() => setDedupeResult(null)}>
+          <div className="modal-card dedupe-result-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">去重结果</div>
+              <button className="modal-close" aria-label="关闭" onClick={() => setDedupeResult(null)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              {dedupeLoading && <div style={{ padding: '24px', textAlign: 'center' }}>正在执行去重…</div>}
+              {!dedupeLoading && (
+                <>
+                  <div className="dedupe-summary">
+                    共发现重复组 <b>{dedupeResult.mergedGroups}</b> 个，删除重复菜品 <b>{dedupeResult.deleted}</b> 条
+                    {dedupeResult.conflictPrices > 0 && (
+                      <span style={{ color: '#d4380d' }}>
+                        ，<b>{dedupeResult.conflictPrices}</b> 处规格同价冲突（已取保留价）
+                      </span>
+                    )}
+                  </div>
+                  <table className="checkout-real-table">
+                    <thead>
+                      <tr>
+                        <th>菜品名称</th>
+                        <th>分类</th>
+                        <th>类型</th>
+                        <th>合并规格</th>
+                        <th>删除行数</th>
+                        <th>说明</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dedupeResult.details.map((d) => (
+                        <tr key={d.keepId}>
+                          <td>{d.name}</td>
+                          <td>{d.category || '—'}</td>
+                          <td>{d.type}</td>
+                          <td>{d.mergedSpecs} 个</td>
+                          <td>{d.duplicateRows} 条</td>
+                          <td>
+                            {d.priceConflict
+                              ? '同规格价格不一致，已保留价格'
+                              : d.mergedSpecs > 1
+                                ? '不同规格已合并为多规格菜'
+                                : '完全重复已删除'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="tm-btn tm-btn-primary" type="button" onClick={() => setDedupeResult(null)}>
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <SortDishModal
         open={sortOpen}
         dishes={dishes}
@@ -1169,7 +1214,7 @@ export default function DishLibrary() {
       <BatchImportDishModal
         open={importOpen}
         onClose={() => setImportOpen(false)}
-        onSubmit={handleImportSubmit}
+        onImported={handleImported}
       />
       {setMealOpen && <CreateSetMealModal open={setMealOpen} onClose={() => setSetMealOpen(false)} />}
       <Toast toast={toast} onClose={() => setToast(null)} />

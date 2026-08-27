@@ -33,6 +33,12 @@ export class ReportsController {
     return this.reportsService.summary(user, query.from, query.to);
   }
 
+  /** 按日营业统计（区间内每天一条） */
+  @Get('daily')
+  daily(@CurrentUser() user: AuthUser, @Query() query: DateRangeDto) {
+    return this.reportsService.daily(user, query.from, query.to);
+  }
+
   /** 菜品销售统计（按菜品聚合） */
   @Get('dish-sales')
   dishSales(@CurrentUser() user: AuthUser, @Query() query: ListReportPageDto) {

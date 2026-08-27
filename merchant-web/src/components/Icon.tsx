@@ -20,6 +20,8 @@ import refreshSvg from '../assets/svg/refresh.svg?raw';
 import exportSvg from '../assets/svg/export.svg?raw';
 import themeSunSvg from '../assets/svg/theme-sun.svg?raw';
 import themeMoonSvg from '../assets/svg/theme-moon.svg?raw';
+import starSvg from '../assets/svg/star.svg?raw';
+import starFilledSvg from '../assets/svg/star-filled.svg?raw';
 
 const ICONS: Record<string, string> = {
   'nav-home': homeSvg,
@@ -44,6 +46,8 @@ const ICONS: Record<string, string> = {
   'theme-sun': themeSunSvg,
   'theme-moon': themeMoonSvg,
   export: exportSvg,
+  star: starSvg,
+  'star-filled': starFilledSvg,
 };
 
 export interface IconProps {

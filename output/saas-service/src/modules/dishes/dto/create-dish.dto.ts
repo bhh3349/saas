@@ -65,11 +65,44 @@ export class CreateDishDto {
   sort_order?: number;
 }
 
+/** 批量导入单行（一个规格一行；名称 + 分类 + 类型 + 规格 组合唯一） */
+export class ImportSpecRowDto {
+  /** 菜品名称 */
+  @IsString()
+  name: string;
+
+  /** 菜品分类 */
+  @IsOptional()
+  @IsString()
+  category?: string;
+
+  /** 菜品类型：普通菜 / 称重菜 */
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  /** 单价（元），内部以分存储 */
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  price: number;
+
+  /** 菜品规格（同一菜品多规格时填写多行，规格不同） */
+  @IsOptional()
+  @IsString()
+  spec?: string;
+
+  /** 状态：在售 / 停售 */
+  @IsOptional()
+  @IsString()
+  status?: string;
+}
+
 /** 批量导入（items 最多 2000 条，避免一次请求过大） */
 export class ImportDishesDto {
   @IsArray()
   @ArrayMaxSize(2000)
   @ValidateNested({ each: true })
-  @Type(() => CreateDishDto)
-  items: CreateDishDto[];
+  @Type(() => ImportSpecRowDto)
+  items: ImportSpecRowDto[];
 }
