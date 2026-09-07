@@ -1,0 +1,374 @@
+/**
+ * saas-printer — Android 原生实现
+ *
+ * 提供两条通道：
+ *  1. 蓝牙经典 SPP  — BluetoothAdapter → BluetoothDevice → createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+ *  2. WiFi TCP      — java.net.Socket(ip, port)
+ *
+ * 所有 write 方法都接收 Uint8Array（ESC/POS 指令流），
+ * 上层用 esc-pos.uts 的 buildReceipt() 直接喂进来即可。
+ *
+ * 线程模型：
+ *  - 连接/发送/关闭都在子线程执行（避免阻塞 UI）
+ *  - 提供 connectTimeout 参数，防止 socket.connect() 无限阻塞
+ *
+ * 权限模型（Android 12+ 变更）：
+ *  - 连接需要运行时授予 BLUETOOTH_CONNECT
+ *  - 扫描需要运行时授予 BLUETOOTH_SCAN
+ *  - 发送 / 扫描前统一走 ensureBluetoothReady() 动态申请并校验蓝牙开关
+ */
+
+import {
+  BluetoothAdapter,
+  BluetoothDevice,
+  BluetoothSocket,
+} from 'android.bluetooth'
+import { Build } from 'android.os'
+import {
+  BroadcastReceiver,
+  Context,
+  Intent,
+  IntentFilter,
+} from 'android.content'
+import { UUID } from 'java.util'
+import { Socket, InetSocketAddress } from 'java.net'
+import { OutputStream } from 'java.io'
+import { Thread } from 'java.lang'
+import { UTSAndroid } from 'io.dcloud.uts'
+
+/** 标准 SPP 串口 UUID */
+const SPP_UUID = '00001101-0000-1000-8000-00805F9B34FB'
+
+/** 连接超时（毫秒） */
+const DEFAULT_TIMEOUT = 3000
+
+/** Uint8Array → kotlin ByteArray（OutputStream.write 需要） */
+function toKtBytes(bytes: Uint8Array): ByteArray {
+  const kb = new ByteArray(bytes.length.toInt())
+  for (let i = 0; i < bytes.length; i++) {
+    kb[i.toInt()] = bytes[i].toByte()
+  }
+  return kb
+}
+
+/** 蓝牙设备信息 */
+export type BtDevice = {
+  name: string
+  mac: string
+  /** 是否已配对 */
+  bonded: boolean
+}
+
+// ========== 权限 ==========
+
+/**
+ * 动态申请蓝牙所需权限。
+ * Android 12+（API 31+）申请 BLUETOOTH_CONNECT / BLUETOOTH_SCAN（含定位，兼容未声明
+ * neverForLocation 标志时的扫描）；Android 11 及以下权限为静态声明，仅需定位权限用于扫描。
+ * @returns true = 所需权限已授予
+ */
+export function requestBluetoothPermissions(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const activity = UTSAndroid.getUniActivity()
+    if (activity == null) {
+      resolve(false)
+      return
+    }
+    let permissions: Array<string> = []
+    if (Build.VERSION.SDK_INT >= 31) {
+      permissions = [
+        'android.permission.BLUETOOTH_CONNECT',
+        'android.permission.BLUETOOTH_SCAN',
+        'android.permission.ACCESS_FINE_LOCATION',
+      ]
+    } else {
+      permissions = ['android.permission.ACCESS_FINE_LOCATION']
+    }
+    UTSAndroid.requestSystemPermission(activity, permissions, (allRight: boolean, grantedList: string[]) => {
+      resolve(allRight)
+    }, (doNotAskAgain: boolean, deniedList: string[]) => {
+      resolve(false)
+    })
+  })
+}
+
+/**
+ * 蓝牙就绪检查：动态申请权限 + 校验蓝牙开关。
+ * @returns '' 表示就绪，否则返回可直接展示给用户的错误提示
+ */
+export function ensureBluetoothReady(): Promise<string> {
+  return new Promise((resolve) => {
+    const adapter = BluetoothAdapter.getDefaultAdapter()
+    if (adapter == null) {
+      resolve('设备不支持蓝牙')
+      return
+    }
+    requestBluetoothPermissions().then((granted) => {
+      if (!granted) {
+        resolve('蓝牙权限未授予，请到系统设置中允许本应用的「附近设备」权限')
+        return
+      }
+      if (!adapter.isEnabled()) {
+        resolve('蓝牙未开启，请到系统设置打开蓝牙')
+        return
+      }
+      resolve('')
+    })
+  })
+}
+
+// ========== 蓝牙 SPP ==========
+
+/**
+ * 连接蓝牙打印机并发送 ESC 指令（自动先做权限申请与蓝牙开关检查）
+ * @param mac 蓝牙 MAC 地址，如 "AA:BB:CC:DD:EE:FF"
+ * @param bytes ESC/POS 指令字节
+ * @param timeout 连接超时毫秒
+ */
+export function sendBluetooth(mac: string, bytes: Uint8Array, timeout: number = DEFAULT_TIMEOUT): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    ensureBluetoothReady().then((readyMsg: string) => {
+      if (readyMsg.length > 0) {
+        reject(new Error(readyMsg))
+        return
+      }
+      doSendBluetooth(mac, bytes, timeout).then(() => {
+        resolve()
+      }).catch((err) => {
+        reject(err as Error)
+      })
+    }).catch((err) => {
+      reject(err as Error)
+    })
+  })
+}
+
+/** 权限与开关检查均通过后的实际连接 + 发送 */
+function doSendBluetooth(mac: string, bytes: Uint8Array, timeout: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let socket: BluetoothSocket | null = null
+    try {
+      const adapter = BluetoothAdapter.getDefaultAdapter()
+      if (adapter == null) {
+        reject(new Error('设备不支持蓝牙'))
+        return
+      }
+      if (!adapter.isEnabled()) {
+        reject(new Error('蓝牙未开启'))
+        return
+      }
+
+      const device: BluetoothDevice = adapter.getRemoteDevice(mac)
+      if (device == null) {
+        reject(new Error('找不到指定蓝牙设备: ' + mac))
+        return
+      }
+
+      const uuid = UUID.fromString(SPP_UUID)
+      socket = device.createInsecureRfcommSocketToServiceRecord(uuid)
+
+      // 取消可能正在进行的蓝牙扫描
+      try { adapter.cancelDiscovery() } catch (_e) {}
+
+      // 在子线程里 connect + write（主线程网络操作会 crash）
+      const finalSocket: BluetoothSocket = socket
+      const t = new Thread(() => {
+        try {
+          finalSocket.connect()
+
+          const os: OutputStream = finalSocket.getOutputStream()
+          os.write(toKtBytes(bytes))
+          os.flush()
+
+          finalSocket.close()
+          resolve()
+        } catch (e: Exception) {
+          try { finalSocket.close() } catch (_) {}
+          reject(e)
+        }
+      })
+      t.start()
+
+      // 超时保护：关 socket 会让阻塞在 connect() 的线程抛异常
+      const finalSocket2: BluetoothSocket = socket
+      setTimeout(() => {
+        try {
+          finalSocket2.close()
+          reject(new Error('蓝牙连接超时'))
+        } catch (_e) {}
+      }, timeout)
+    } catch (e: Exception) {
+      try { if (socket != null) socket.close() } catch (_) {}
+      reject(e)
+    }
+  })
+}
+
+// ========== 蓝牙扫描 ==========
+
+/** ACTION_FOUND 广播接收器：收集发现的设备，发现结束（或超时兜底）后回调 */
+class ScanDeviceReceiver extends BroadcastReceiver {
+  private found: Array<BtDevice>
+  private done: (() => void) | null = null
+  private finished = false
+
+  constructor(found: Array<BtDevice>) {
+    super()
+    this.found = found
+  }
+
+  /** 设置结束回调（仅触发一次） */
+  setDoneCallback(cb: () => void) {
+    this.done = cb
+  }
+
+  /** 结束收集（幂等） */
+  finish() {
+    if (!this.finished) {
+      this.finished = true
+      const cb = this.done
+      if (cb != null) {
+        cb()
+      }
+    }
+  }
+
+  override onReceive(context: Context, intent: Intent) {
+    const action = intent.getAction() ?? ''
+    if (action == BluetoothAdapter.ACTION_DISCOVERY_FINISHED) {
+      this.finish()
+      return
+    }
+    if (action == BluetoothDevice.ACTION_FOUND) {
+      const dev = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+      if (dev != null) {
+        const mac = dev.getAddress() ?? ''
+        if (mac.length > 0) {
+          const exists = this.found.find((d: BtDevice): boolean => d.mac === mac)
+          if (exists == null) {
+            this.found.push({
+              name: dev.getName() ?? '',
+              mac: mac,
+              bonded: dev.getBondState() == BluetoothDevice.BOND_BONDED,
+            } as BtDevice)
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * 扫描附近的经典蓝牙设备（系统发现一般 12s 左右结束）。
+ * 需要先通过 ensureBluetoothReady() 取得 BLUETOOTH_SCAN / 定位权限。
+ * 结果为「发现期间出现的全部设备」（含已配对设备，bonded 字段区分）。
+ */
+export function startBluetoothScan(): Promise<Array<BtDevice>> {
+  return new Promise((resolve, reject) => {
+    const adapter = BluetoothAdapter.getDefaultAdapter()
+    if (adapter == null) {
+      reject(new Error('设备不支持蓝牙'))
+      return
+    }
+    if (!adapter.isEnabled()) {
+      reject(new Error('蓝牙未开启，请先打开蓝牙'))
+      return
+    }
+    const activity = UTSAndroid.getUniActivity()
+    if (activity == null) {
+      reject(new Error('无法获取当前页面上下文'))
+      return
+    }
+
+    const found: Array<BtDevice> = []
+    const filter = new IntentFilter(BluetoothDevice.ACTION_FOUND)
+    filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+    const receiver = new ScanDeviceReceiver(found)
+
+    try {
+      activity.registerReceiver(receiver, filter)
+    } catch (e: Exception) {
+      reject(new Error('注册蓝牙扫描监听失败: ' + e.message))
+      return
+    }
+
+    receiver.setDoneCallback(() => {
+      try { activity.unregisterReceiver(receiver) } catch (_e) {}
+      resolve(found)
+    })
+
+    if (!adapter.startDiscovery()) {
+      receiver.finish()
+      reject(new Error('启动蓝牙扫描失败，请重试'))
+      return
+    }
+
+    // 兜底超时：系统 DISCOVERY_FINISHED 一般 12s 内回调，15s 未回调则强制结束
+    setTimeout(() => {
+      receiver.finish()
+    }, 15000)
+  })
+}
+
+// ========== WiFi TCP ==========
+
+/**
+ * 通过 TCP 连接 WiFi 打印机并发送 ESC 指令
+ * @param ip 打印机 IP，如 "192.168.1.88"
+ * @param port 端口，默认 9100（JET Direct）
+ * @param bytes ESC/POS 指令字节
+ * @param timeout 连接超时毫秒
+ */
+export function sendTcp(ip: string, port: number, bytes: Uint8Array, timeout: number = DEFAULT_TIMEOUT): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // 用子线程执行（connect 会阻塞）
+    const t = new Thread(() => {
+      let socket: Socket | null = null
+      try {
+        socket = new Socket()
+        socket.connect(new InetSocketAddress(ip, port.toInt()), timeout.toInt())
+
+        const os: OutputStream = socket.getOutputStream()
+        os.write(toKtBytes(bytes))
+        os.flush()
+
+        socket.close()
+        resolve()
+      } catch (e: Exception) {
+        try { if (socket != null) socket.close() } catch (_) {}
+        reject(e)
+      }
+    })
+    t.start()
+
+    // 整体超时保护
+    setTimeout(() => {
+      reject(new Error('TCP 连接超时'))
+    }, timeout + 2000)
+  })
+}
+
+// ========== 状态查询 ==========
+
+/** 检查蓝牙是否可用 */
+export function isBluetoothEnabled(): boolean {
+  const adapter = BluetoothAdapter.getDefaultAdapter()
+  if (adapter == null) return false
+  return adapter.isEnabled()
+}
+
+/** 获取已配对蓝牙设备列表（需已取得 BLUETOOTH_CONNECT 权限，否则返回空列表） */
+export function getPairedDevices(): Array<BtDevice> {
+  const result: Array<BtDevice> = []
+  try {
+    const adapter = BluetoothAdapter.getDefaultAdapter()
+    if (adapter == null) return result
+    // kotlin Set<BluetoothDevice> 用迭代器遍历（UTS 不支持对平台 Set 做下标访问）
+    const it = adapter.getBondedDevices().iterator()
+    while (it.hasNext()) {
+      const d: BluetoothDevice = it.next()
+      result.push({ name: d.getName() ?? '', mac: d.getAddress() ?? '', bonded: true } as BtDevice)
+    }
+  } catch (_e) {}
+  return result
+}

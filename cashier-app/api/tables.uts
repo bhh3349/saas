@@ -1,0 +1,40 @@
+/**
+ * 桌台接口
+ */
+import { request } from '../utils/request.uts'
+import { toInt } from '../utils/num.uts'
+
+export type TableItem = {
+  id: number
+  name: string
+  area: string
+  /** 座位数（默认用餐人数） */
+  capacity: number
+  /** idle 空闲 / occupied 占用 */
+  status: string
+  created_at: string
+}
+
+/** 收银工作台桌台全量列表（含状态） */
+export function fetchTablesAll(): Promise<TableItem[]> {
+  return request<UTSJSONObject>({
+    url: '/tables',
+    method: 'GET',
+    raw: true,
+  }).then((raw): TableItem[] => {
+    const items = raw.getArray<UTSJSONObject>('data') ?? []
+    const tables: TableItem[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      tables.push({
+        id: toInt((item['id'] ?? 0).toString()),
+        name: (item['name'] ?? '').toString(),
+        area: (item['area'] ?? '').toString(),
+        capacity: toInt((item['capacity'] ?? 0).toString()),
+        status: (item['status'] ?? 'idle').toString(),
+        created_at: (item['created_at'] ?? '').toString(),
+      } as TableItem)
+    }
+    return tables
+  })
+}

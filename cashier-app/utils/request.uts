@@ -1,0 +1,92 @@
+/**
+ * 统一请求封装
+ * 契约与 saas-service 一致：{ code, message, data }，code = 0 表示成功
+ * token 通过 Bearer 头携带；401 时清除本地 token 并回登录页
+ */
+import { getBaseUrl, TIMEOUT } from './config.uts'
+
+/** 后端统一响应结构 */
+export type ApiResponse<T> = {
+  code: number
+  message: string
+  data: T
+}
+
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
+export type RequestOptions = {
+  url: string
+  method?: HttpMethod
+  /** JSON 对象或字符串 */
+  data?: Object | string | null
+  /** 返回完整响应体，用于数组数据的显式解析 */
+  raw?: boolean
+}
+
+const TOKEN_KEY = 'token'
+
+/** 读取本地 token */
+export function getToken(): string {
+  return (uni.getStorageSync(TOKEN_KEY) as string) ?? ''
+}
+
+/** 保存 token */
+export function setToken(token: string): void {
+  uni.setStorageSync(TOKEN_KEY, token)
+}
+
+/** 清除 token */
+export function clearToken(): void {
+  uni.removeStorageSync(TOKEN_KEY)
+}
+
+/** 发起请求，成功返回 data 字段，失败 reject Error */
+export function request<T>(options: RequestOptions): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const token = getToken()
+    const requestData = options.data == null ? '' : JSON.stringify(options.data)
+    uni.request({
+      url: getBaseUrl() + options.url,
+      method: options.method ?? 'GET',
+      data: requestData,
+      timeout: TIMEOUT,
+      header: {
+        'Content-Type': 'application/json',
+        Authorization: token.length > 0 ? 'Bearer ' + token : '',
+      },
+      success: (res) => {
+        const status = res.statusCode
+        const body = res.data as UTSJSONObject | null
+        const statusText = status.toString()
+
+        // 未登录 / token 失效：回到登录页
+        if (statusText == '401') {
+          clearToken()
+          uni.reLaunch({ url: '/pages/login/index' })
+          reject(new Error('登录已失效，请重新登录'))
+          return
+        }
+
+        const rawCode = body == null ? null : body['code']
+        const responseCode = rawCode == null ? '' : rawCode.toString()
+        if ((statusText == '200' || statusText == '201') && body != null && responseCode == '0') {
+          if (options.raw == true) {
+            resolve(body as T)
+            return
+          }
+          resolve(body['data'] as T)
+          return
+        }
+
+        const msg =
+          body != null && ((body['message'] as string) ?? '').length > 0
+            ? ((body['message'] as string) ?? '')
+            : '请求失败（' + status + '）'
+        reject(new Error(msg))
+      },
+      fail: (err) => {
+        reject(new Error(err.errMsg ?? ''))
+      },
+    })
+  })
+}

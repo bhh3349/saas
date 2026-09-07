@@ -5,6 +5,7 @@ import { BusinessException } from '../../common/business.exception';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import { DishStatus } from '../../common/enums';
 import { Dish } from '../../entities/dish.entity';
+import { OperationLog } from '../../entities/operation-log.entity';
 import { OrderRefund } from '../../entities/order-refund.entity';
 import { Setmeal } from '../../entities/setmeal.entity';
 import {
@@ -32,20 +33,19 @@ export interface DishItem {
   spec_code: string;
   /** 普通菜 / 称重菜 */
   type: string;
+  unit: string;
+  serve_mode: string;
+  print_enable: boolean;
+  print_dept: string;
+  temp_price_change: boolean;
+  manual_discount: boolean;
+  min_amount: number;
+  delta_amount: number;
+  fractional: boolean;
   sort_order: number;
   status: string;
   sold_out: boolean;
   created_at: Date;
-}
-
-/** 元 → 分 */
-function yuanToCents(v: number): number {
-  return Math.round(v * 100);
-}
-
-/** 分 → 元 */
-function centsToYuan(v: number): number {
-  return v / 100;
 }
 
 /** 导入失败明细 */
@@ -76,9 +76,11 @@ export class DishesService {
     private readonly dishRepo: Repository<Dish>,
     @InjectRepository(Setmeal)
     private readonly setmealRepo: Repository<Setmeal>,
-    @InjectRepository(OrderRefund)
-    private readonly refundRepo: Repository<OrderRefund>,
-  ) {}
+  @InjectRepository(OrderRefund)
+  private readonly refundRepo: Repository<OrderRefund>,
+  @InjectRepository(OperationLog)
+  private readonly logRepo: Repository<OperationLog>,
+) {}
 
   async create(user: AuthUser, dto: CreateDishDto): Promise<DishItem> {
     const category = dto.category || '默认分类';
@@ -99,16 +101,26 @@ export class DishesService {
         shop_id: user.shopId,
         name: dto.name,
         category,
-        price: yuanToCents(dto.price),
-        specs: JSON.stringify(this.toSpecsCents(dto.specs)),
+        price: dto.price,
+        specs: JSON.stringify(this.toSpecs(dto.specs)),
         code: dto.code || '',
         spec_code: dto.spec_code || '',
         type,
+        unit: dto.unit || '份',
+        serve_mode: dto.serve_mode || '即起',
+        print_enable: dto.print_enable ?? false,
+        print_dept: dto.print_dept || '',
+        temp_price_change: dto.temp_price_change ?? false,
+        manual_discount: dto.manual_discount ?? true,
+        min_amount: dto.min_amount ?? 1,
+        delta_amount: dto.delta_amount ?? 1,
+        fractional: dto.fractional ?? false,
         sort_order: dto.sort_order ?? (max ? max.sort_order + 1 : 1),
         status: DishStatus.OnSale,
         sold_out: false,
       }),
     );
+    await this.logOperation(user, 'dish_create', dish.id, `新增菜品「${dish.name}」`);
     return this.toItem(dish);
   }
 
@@ -153,7 +165,7 @@ export class DishesService {
       name: string;
       category: string;
       type: string;
-      priceCents: number;
+      price: number;
       spec: string;
       status: string;
     }
@@ -167,7 +179,7 @@ export class DishesService {
       const category = (item.category || '默认分类').trim() || '默认分类';
       const type = item.type === '称重菜' ? '称重菜' : '普通菜';
       const spec = (item.spec || '标准').trim() || '标准';
-      const priceCents = yuanToCents(item.price);
+      const price = item.price;
       const status = item.status === '停售' ? DishStatus.OffSale : DishStatus.OnSale;
       const key = `${name}|${category}|${type}|${spec}`;
 
@@ -184,7 +196,7 @@ export class DishesService {
         errors.push({ name, category, type, spec, reason: '与现有菜品重复（名称/分类/类型/规格 完全相同）' });
         continue;
       }
-      pending.push({ name, category, type, priceCents, spec, status });
+      pending.push({ name, category, type, price, spec, status });
     }
 
     if (pending.length === 0) {
@@ -232,7 +244,7 @@ export class DishesService {
         }
         for (const row of rows) {
           if (current.has(row.spec)) continue;
-          specs.push({ name: row.spec, price_delta: row.priceCents - existingDish.price });
+          specs.push({ name: row.spec, price_delta: row.price - existingDish.price });
           current.add(row.spec);
         }
         existingDish.specs = JSON.stringify(specs);
@@ -241,11 +253,11 @@ export class DishesService {
       }
 
       // 新建菜品：多规格以最小价格行为基准，其余规格记为加价
-      const basePriceCents = Math.min(...rows.map((r) => r.priceCents));
+      const basePrice = Math.min(...rows.map((r) => r.price));
       const specSet = new Set(rows.map((r) => r.spec));
       const specs =
         specSet.size > 1
-          ? rows.map((r) => ({ name: r.spec, price_delta: r.priceCents - basePriceCents }))
+          ? rows.map((r) => ({ name: r.spec, price_delta: r.price - basePrice }))
           : [];
       const { code, spec_code } = gen();
       toCreate.push(
@@ -253,7 +265,7 @@ export class DishesService {
           shop_id: user.shopId,
           name: rows[0].name,
           category: rows[0].category,
-          price: basePriceCents,
+          price: basePrice,
           specs: JSON.stringify(specs),
           code,
           spec_code,
@@ -326,13 +338,23 @@ export class DishesService {
     const dish = await this.findInShop(user, id);
     if (dto.name !== undefined) dish.name = dto.name;
     if (dto.category !== undefined) dish.category = dto.category;
-    if (dto.price !== undefined) dish.price = yuanToCents(dto.price);
-    if (dto.specs !== undefined) dish.specs = JSON.stringify(this.toSpecsCents(dto.specs));
+    if (dto.price !== undefined) dish.price = dto.price;
+    if (dto.specs !== undefined) dish.specs = JSON.stringify(this.toSpecs(dto.specs));
     if (dto.code !== undefined) dish.code = dto.code;
     if (dto.spec_code !== undefined) dish.spec_code = dto.spec_code;
     if (dto.type !== undefined) dish.type = dto.type;
+    if (dto.unit !== undefined) dish.unit = dto.unit;
+    if (dto.serve_mode !== undefined) dish.serve_mode = dto.serve_mode;
+    if (dto.print_enable !== undefined) dish.print_enable = dto.print_enable;
+    if (dto.print_dept !== undefined) dish.print_dept = dto.print_dept;
+    if (dto.temp_price_change !== undefined) dish.temp_price_change = dto.temp_price_change;
+    if (dto.manual_discount !== undefined) dish.manual_discount = dto.manual_discount;
+    if (dto.min_amount !== undefined) dish.min_amount = dto.min_amount;
+    if (dto.delta_amount !== undefined) dish.delta_amount = dto.delta_amount;
+    if (dto.fractional !== undefined) dish.fractional = dto.fractional;
     if (dto.sort_order !== undefined) dish.sort_order = dto.sort_order;
     await this.dishRepo.save(dish);
+    await this.logOperation(user, 'dish_update', dish.id, `修改菜品「${dish.name}」`);
     return this.toItem(dish);
   }
 
@@ -352,7 +374,29 @@ export class DishesService {
 
   async remove(user: AuthUser, id: number): Promise<void> {
     const dish = await this.findInShop(user, id);
+    const dishName = dish.name;
     await this.dishRepo.remove(dish);
+    await this.logOperation(user, 'dish_delete', id, `删除菜品「${dishName}」`);
+  }
+
+  private async logOperation(
+    user: AuthUser,
+    action: string,
+    dishId: number,
+    detail: string,
+  ): Promise<void> {
+    await this.logRepo.save(
+      this.logRepo.create({
+        shop_id: user.shopId,
+        user_id: user.userId,
+        user_name: user.phone,
+        action,
+        target_type: 'dish',
+        target_id: dishId,
+        amount: 0,
+        detail,
+      }),
+    );
   }
 
   private async findInShop(user: AuthUser, id: number): Promise<Dish> {
@@ -363,10 +407,10 @@ export class DishesService {
     return dish;
   }
 
-  private toSpecsCents(specs?: DishSpecDto[]): DishSpecItem[] {
+  private toSpecs(specs?: DishSpecDto[]): DishSpecItem[] {
     return (specs || []).map((s) => ({
       name: s.name,
-      price_delta: yuanToCents(s.price_delta || 0),
+      price_delta: s.price_delta || 0,
     }));
   }
 
@@ -377,7 +421,7 @@ export class DishesService {
       if (Array.isArray(parsed)) {
         specs = parsed.map((s) => ({
           name: s.name ?? '',
-          price_delta: centsToYuan(Number(s.price_delta) || 0),
+          price_delta: Number(s.price_delta) || 0,
         }));
       }
     } catch {
@@ -387,11 +431,20 @@ export class DishesService {
       id: d.id,
       name: d.name,
       category: d.category,
-      price: centsToYuan(d.price),
+      price: d.price,
       specs,
       code: d.code,
       spec_code: d.spec_code,
       type: d.type,
+      unit: d.unit || '份',
+      serve_mode: d.serve_mode || '即起',
+      print_enable: Boolean(d.print_enable),
+      print_dept: d.print_dept || '',
+      temp_price_change: Boolean(d.temp_price_change),
+      manual_discount: d.manual_discount === undefined ? true : Boolean(d.manual_discount),
+      min_amount: Number(d.min_amount ?? 1),
+      delta_amount: Number(d.delta_amount ?? 1),
+      fractional: Boolean(d.fractional),
       sort_order: d.sort_order,
       status: d.status,
       sold_out: d.sold_out,

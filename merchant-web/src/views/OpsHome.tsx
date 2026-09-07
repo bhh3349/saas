@@ -16,15 +16,14 @@ import Toast from '../components/Toast';
 import { findViewMeta, ViewKey } from '../data/navigation';
 import { FAV_EVENT, getFavorites } from '../utils/favorites';
 
-const QUICK_ENTRIES = [
-  { label: '开台点餐', tile: 'open' },
-  { label: '桌台管理', tile: 'table' },
-  { label: '菜品管理', tile: 'dish' },
-  { label: '会员营销', tile: 'member' },
-  { label: '结账收银', tile: 'checkout' },
-  { label: '打印管理', tile: 'print' },
-  { label: '营业报表', tile: 'report' },
-  { label: '经营设置', tile: 'settings' },
+/** 运营中心快捷入口：点击跳转到对应页面（仅保留有实际功能入口的项） */
+const QUICK_ENTRIES: { key: ViewKey; label: string; tile: string }[] = [
+  { key: 'ops:restaurant:table', label: '桌台管理', tile: 'table' },
+  { key: 'ops:dish:library', label: '菜品管理', tile: 'dish' },
+  { key: 'ops:checkout', label: '结账收银', tile: 'checkout' },
+  { key: 'ops:print:station', label: '打印管理', tile: 'print' },
+  { key: 'rpt:biz-stats', label: '营业报表', tile: 'report' },
+  { key: 'ops:business:must', label: '必点菜设置', tile: 'settings' },
 ] as const;
 
 /** 运营中心首页：收藏的运营子页快捷入口（金色星标） */
@@ -202,21 +201,38 @@ export default function OpsHome({ onNavigate }: OpsHomeProps) {
           </div>
           <div className="panel-body">
             <div className="quick-grid">
-              {favEntries.map((entry) => (
+              {favEntries.length === 0 ? (
+                <div
+                  className="quick-item quick-add"
+                  title="点击页面右上角 ★，收藏常用页面到首页快捷入口"
+                >
+                  <div className="quick-tile add">
+                    <Icon name="star" className="quick-add-icon" />
+                  </div>
+                  <span className="quick-label">添加快捷页</span>
+                </div>
+              ) : (
+                favEntries.map((entry) => (
+                  <div
+                    key={entry.key}
+                    className="quick-item"
+                    title={entry.label}
+                    onClick={() => onNavigate?.(entry.key, entry.label)}
+                  >
+                    <div className="quick-tile fav">
+                      <Icon name="star-filled" />
+                    </div>
+                    <span className="quick-label">{entry.label}</span>
+                  </div>
+                ))
+              )}
+              {QUICK_ENTRIES.map((entry) => (
                 <div
                   key={entry.key}
                   className="quick-item"
                   title={entry.label}
                   onClick={() => onNavigate?.(entry.key, entry.label)}
                 >
-                  <div className="quick-tile fav">
-                    <Icon name="star-filled" />
-                  </div>
-                  <span className="quick-label">{entry.label}</span>
-                </div>
-              ))}
-              {QUICK_ENTRIES.map((entry) => (
-                <div key={entry.label} className="quick-item" title={entry.label}>
                   <div className={`quick-tile ${entry.tile}`} />
                   <span className="quick-label">{entry.label}</span>
                 </div>

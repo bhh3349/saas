@@ -1,6 +1,9 @@
 import { IsIn, IsString, Length, Matches } from 'class-validator';
 import { UserRole } from '../../../common/enums';
 
+/** 允许创建的角色：老板 / 收银员 / 财务 */
+const ALLOWED_ROLES = [UserRole.Boss, UserRole.Cashier, UserRole.Finance];
+
 export class CreateStaffDto {
   /** 员工手机号（全局唯一） */
   @IsString()
@@ -17,9 +20,9 @@ export class CreateStaffDto {
   @Length(1, 32)
   name: string;
 
-  /** 角色：仅允许收银员 / 财务 */
-  @IsIn([UserRole.Cashier, UserRole.Finance], {
-    message: '员工角色仅支持收银员 / 财务',
+  /** 角色：老板 / 收银员 / 财务 */
+  @IsIn(ALLOWED_ROLES, {
+    message: '员工角色仅支持老板 / 收银员 / 财务',
   })
   role: string;
 }

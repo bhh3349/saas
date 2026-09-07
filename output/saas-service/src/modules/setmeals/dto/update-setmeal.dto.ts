@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -25,9 +26,9 @@ export class UpdateSetmealDto {
   @IsString()
   category?: string;
 
-  /** 价格（分） */
+  /** 价格（元） */
   @IsOptional()
-  @IsInt()
+  @IsNumber()
   price?: number;
 
   @IsOptional()

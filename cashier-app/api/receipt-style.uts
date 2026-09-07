@@ -1,0 +1,114 @@
+/**
+ * 票据样式接口
+ *
+ * 读取商家后台「票据样式」配置桶（print-style）里「结账单」的配置，
+ * 用于打印时按区块开关 / 字号 / 页眉页脚生成小票。
+ * GET /admin/buckets/print-style（老板 / 收银员可读）
+ */
+import { request } from '../utils/request.uts'
+
+/** 小票区块开关（与商家后台 PrintStyle 的 SectionKey 对齐，仅收银 App 用到的区块） */
+export type ReceiptSections = {
+  storeName: boolean
+  orderNumber: boolean
+  tableNumber: boolean
+  orderTime: boolean
+  itemsDetail: boolean
+  subtotal: boolean
+  discountAmount: boolean
+  totalAmount: boolean
+  paymentMethod: boolean
+  changeAmount: boolean
+}
+
+/** 结账单票据样式 */
+export type ReceiptStyle = {
+  /** 纸宽：'58' | '80'（仅做参考，实际列数按打印机的 width_mm 计算） */
+  paperWidth: string
+  /** 字号：'small' | 'medium' | 'large' */
+  fontSize: string
+  /** 页眉文案（为空不打印） */
+  headerText: string
+  /** 页脚文案（为空不打印） */
+  footerText: string
+  sections: ReceiptSections
+}
+
+/** 默认样式（配置桶缺失 / 字段缺失时的回退值） */
+export function defaultReceiptStyle(): ReceiptStyle {
+  return {
+    paperWidth: '80',
+    fontSize: 'medium',
+    headerText: '',
+    footerText: '欢迎光临',
+    sections: {
+      storeName: true,
+      orderNumber: true,
+      tableNumber: true,
+      orderTime: true,
+      itemsDetail: true,
+      subtotal: true,
+      discountAmount: true,
+      totalAmount: true,
+      paymentMethod: true,
+      changeAmount: true,
+    } as ReceiptSections,
+  }
+}
+
+/** 从动态 JSON 里安全读布尔（缺省取 fallback） */
+function readBool(obj: UTSJSONObject, key: string, fallback: boolean): boolean {
+  const v = obj.getBoolean(key)
+  if (v == null) return fallback
+  return v
+}
+
+/**
+ * 拉取「结账单」票据样式。
+ * 配置桶不存在 / 无结账单配置 / 字段缺失时，缺失部分回退默认值；
+ * 接口失败（如无权限 / 网络异常）由调用方捕获后走默认样式。
+ */
+export async function fetchSettleReceiptStyle(): Promise<ReceiptStyle> {
+  const root = await request<UTSJSONObject>({
+    url: '/admin/buckets/print-style',
+    method: 'GET',
+  })
+  const style = defaultReceiptStyle()
+  if (root == null) {
+    return style
+  }
+  const settleCfg = root.getJSON('结账单')
+  if (settleCfg == null) {
+    return style
+  }
+  const paperWidth = settleCfg.getString('paperWidth')
+  if (paperWidth == '58' || paperWidth == '80') {
+    style.paperWidth = paperWidth
+  }
+  const fontSize = settleCfg.getString('fontSize')
+  if (fontSize == 'small' || fontSize == 'medium' || fontSize == 'large') {
+    style.fontSize = fontSize
+  }
+  const header = settleCfg.getString('headerText')
+  if (header != null) {
+    style.headerText = header
+  }
+  const footer = settleCfg.getString('footerText')
+  if (footer != null) {
+    style.footerText = footer
+  }
+  const sections = settleCfg.getJSON('sections')
+  if (sections != null) {
+    style.sections.storeName = readBool(sections, 'storeName', style.sections.storeName)
+    style.sections.orderNumber = readBool(sections, 'orderNumber', style.sections.orderNumber)
+    style.sections.tableNumber = readBool(sections, 'tableNumber', style.sections.tableNumber)
+    style.sections.orderTime = readBool(sections, 'orderTime', style.sections.orderTime)
+    style.sections.itemsDetail = readBool(sections, 'itemsDetail', style.sections.itemsDetail)
+    style.sections.subtotal = readBool(sections, 'subtotal', style.sections.subtotal)
+    style.sections.discountAmount = readBool(sections, 'discountAmount', style.sections.discountAmount)
+    style.sections.totalAmount = readBool(sections, 'totalAmount', style.sections.totalAmount)
+    style.sections.paymentMethod = readBool(sections, 'paymentMethod', style.sections.paymentMethod)
+    style.sections.changeAmount = readBool(sections, 'changeAmount', style.sections.changeAmount)
+  }
+  return style
+}

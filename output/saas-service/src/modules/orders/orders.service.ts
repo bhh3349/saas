@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository, Between } from 'typeorm';
 import { BusinessException } from '../../common/business.exception';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
 import {
@@ -26,12 +26,16 @@ export interface OrderItemSnapshot {
   unit_price: number;
   qty: number;
   amount: number;
+  /** 单品备注（如「不要香菜」），缺省无备注 */
+  remark?: string | null;
 }
 
 export interface OrderItem {
   id: number;
   order_no: string;
   mode: string;
+  /** 实际用餐人数 */
+  guests: number | null;
   table_id: number | null;
   ticket_no: number | null;
   status: string;
@@ -57,16 +61,6 @@ export interface OrderItem {
   settled_at: Date | null;
 }
 
-/** 元 → 分 */
-function yuanToCents(v: number): number {
-  return Math.round(v * 100);
-}
-
-/** 分 → 元 */
-function centsToYuan(v: number): number {
-  return v / 100;
-}
-
 /** 当前日期 YYYYMMDD（本地时区） */
 function todayKey(d: Date = new Date()): string {
   const y = d.getFullYear();
@@ -77,6 +71,16 @@ function todayKey(d: Date = new Date()): string {
 
 /** 解析菜品规格 JSON */
 function parseSpecs(raw: string): { name: string; price_delta: number }[] {
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 解析订单菜品 JSON */
+function parseItems(raw: string): OrderItemSnapshot[] {
   try {
     const parsed = JSON.parse(raw || '[]');
     return Array.isArray(parsed) ? parsed : [];
@@ -130,7 +134,8 @@ export class OrdersService {
       // 2. 按菜品快照计算金额（元分校验在服务端，防客户端篡改）
       const items: OrderItemSnapshot[] = [];
       let total = 0;
-      for (const it of dto.items) {
+      const orderItems = dto.items || [];
+      for (const it of orderItems) {
         const dish = await dishRepo.findOne({ where: { id: it.dish_id } });
         if (!dish || dish.shop_id !== user.shopId) {
           throw new BusinessException('菜品不存在');
@@ -158,6 +163,7 @@ export class OrdersService {
           unit_price: unitPrice,
           qty: it.qty,
           amount,
+          remark: (it.remark ?? '').trim() || null,
         });
       }
 
@@ -174,6 +180,7 @@ export class OrdersService {
           shop_id: user.shopId,
           order_no: orderNo,
           mode: dto.mode,
+          guests: dto.guests ?? null,
           table_id: tableId,
           ticket_no: ticketNo,
           status: OrderStatus.Pending,
@@ -190,15 +197,111 @@ export class OrdersService {
     });
   }
 
-  /** 订单流（本店，按状态筛选） */
+  /** 单个订单详情 */
+  async findOne(user: AuthUser, id: number): Promise<OrderItem> {
+    const orderRepo = this.dataSource.getRepository(Order);
+    const order = await this.findInShop(orderRepo, user, id);
+    return this.toItem(order);
+  }
+
+  /**
+   * 追加菜品到已有订单（桌台循环加菜）
+   * - 订单必须处于 pending / confirmed（未结账）
+   * - 同 dish_id + spec_index 合并数量
+   */
+  async addItems(
+    user: AuthUser,
+    id: number,
+    dto: { items: { dish_id: number; spec_index?: number; qty: number; remark?: string }[] },
+  ): Promise<OrderItem> {
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(Order);
+      const dishRepo = manager.getRepository(Dish);
+
+      const order = await this.findInShop(orderRepo, user, id);
+      if (
+        ![OrderStatus.Pending, OrderStatus.Confirmed].includes(
+          order.status as OrderStatus,
+        )
+      ) {
+        throw new BusinessException('当前订单状态不可加菜');
+      }
+
+      const existing: OrderItemSnapshot[] = parseItems(order.items);
+
+      for (const it of dto.items) {
+        const dish = await dishRepo.findOne({ where: { id: it.dish_id } });
+        if (!dish || dish.shop_id !== user.shopId) {
+          throw new BusinessException('菜品不存在');
+        }
+        if (dish.status !== DishStatus.OnSale || dish.sold_out) {
+          throw new BusinessException(`菜品「${dish.name}」已下架或沽清`);
+        }
+        const specIdx = it.spec_index ?? -1;
+        let specName: string | null = null;
+        let specDelta = 0;
+        if (specIdx >= 0) {
+          const spec = parseSpecs(dish.specs)[specIdx];
+          if (!spec) {
+            throw new BusinessException(`菜品「${dish.name}」规格不存在`);
+          }
+          specName = spec.name;
+          specDelta = Number(spec.price_delta) || 0;
+        }
+        const unitPrice = dish.price + specDelta;
+        const itemRemark = (it.remark ?? '').trim() || null;
+
+        // 合并已有条目（菜品 + 规格 + 备注 相同才合并数量）
+        const existIdx = existing.findIndex(
+          (e) =>
+            e.dish_id === dish.id &&
+            (e.spec_name ?? null) === specName &&
+            (e.remark ?? null) === itemRemark,
+        );
+        if (existIdx >= 0) {
+          existing[existIdx].qty += it.qty;
+          existing[existIdx].amount = existing[existIdx].unit_price * existing[existIdx].qty;
+        } else {
+          existing.push({
+            dish_id: dish.id,
+            name: dish.name,
+            spec_name: specName,
+            unit_price: unitPrice,
+            qty: it.qty,
+            amount: unitPrice * it.qty,
+            remark: itemRemark,
+          });
+        }
+      }
+
+      const total = existing.reduce((s, e) => s + e.amount, 0);
+      order.items = JSON.stringify(existing);
+      order.total_amount = total;
+      order.status = OrderStatus.Confirmed; // 追加后标记为已下单
+      const saved = await orderRepo.save(order);
+      return this.toItem(saved);
+    });
+  }
+
+  /** 订单流（本店，按状态 + 日期范围筛选） */
   async list(
     user: AuthUser,
     page: number,
     pageSize: number,
     status?: string,
+    startDate?: string,
+    endDate?: string,
   ): Promise<{ total: number; items: OrderItem[] }> {
     const where: Record<string, unknown> = { shop_id: user.shopId };
     if (status) where.status = status;
+    if (startDate || endDate) {
+      // 默认 end = start（单日），补全时间
+      const s = startDate ? new Date(startDate + 'T00:00:00') : new Date('2000-01-01T00:00:00');
+      const e = endDate
+        ? new Date(endDate + 'T23:59:59')
+        : new Date((startDate || new Date().toISOString().slice(0, 10)) + 'T23:59:59');
+      where.created_at = Between(s, e);
+    }
     const [items, total] = await this.orderRepo.findAndCount({
       where,
       order: { id: 'DESC' },
@@ -221,14 +324,24 @@ export class OrdersService {
     });
   }
 
-  /** 拒单（pending → void，释放桌台） */
+  /**
+   * 拒单 / 撤单（pending / confirmed → void，释放桌台）
+   * - pending：客人未点菜即取消（拒单）
+   * - confirmed：已下单未结账整单取消（撤台）
+   */
   async reject(user: AuthUser, id: number): Promise<OrderItem> {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(Order);
       const order = await this.findInShop(orderRepo, user, id);
-      if (order.status !== OrderStatus.Pending) {
-        throw new BusinessException('仅待接单订单可拒单');
+      if (
+        ![
+          OrderStatus.Pending,
+          OrderStatus.Confirmed,
+        ].includes(order.status as OrderStatus)
+      ) {
+        throw new BusinessException('仅未结账订单可撤单');
       }
+      const prevStatus = order.status;
       order.status = OrderStatus.Void;
       await orderRepo.save(order);
       await this.releaseTable(manager, order);
@@ -238,7 +351,9 @@ export class OrdersService {
         SensitiveAction.VoidOrder,
         order.id,
         order.total_amount,
-        `拒单作废 ¥${centsToYuan(order.total_amount)}`,
+        prevStatus === OrderStatus.Pending
+          ? `拒单作废 ￥${order.total_amount}`
+          : `撤单作废 ￥${order.total_amount}`,
       );
       return this.toItem(order);
     });
@@ -276,17 +391,14 @@ export class OrdersService {
       }
 
       const total = order.total_amount;
-      let paid =
-        dto.paid_amount !== undefined
-          ? yuanToCents(dto.paid_amount)
-          : total;
+      let paid = dto.paid_amount !== undefined ? dto.paid_amount : total;
       let discount = 0;
       let discountType: string | null = null;
       let discountName: string | null = null;
       let voucherId: number | null = null;
 
       if (dto.discount_amount !== undefined) {
-        discount = Math.min(Math.max(0, Math.round(dto.discount_amount * 100)), total);
+        discount = Math.min(Math.max(0, dto.discount_amount), total);
         discountType = dto.discount_type || 'discount';
         discountName = dto.discount_name || null;
         voucherId = dto.voucher_id ?? null;
@@ -321,7 +433,7 @@ export class OrdersService {
             SensitiveAction.Voucher,
             order.id,
             discount,
-            `优惠券核销${discountName ? `-${discountName}` : ''}，优惠 ¥${centsToYuan(discount)}`,
+            `优惠券核销${discountName ? `-${discountName}` : ''}，优惠 ¥${discount}`,
           );
         } else {
           await this.writeLog(
@@ -330,7 +442,7 @@ export class OrdersService {
             SensitiveAction.PriceChange,
             order.id,
             discount,
-            `${discountName || '改价'}，优惠 ¥${centsToYuan(discount)}`,
+            `${discountName || '改价'}，优惠 ¥${discount}`,
           );
         }
       }
@@ -397,7 +509,15 @@ export class OrdersService {
 
       order.items = JSON.stringify(snap.filter((s) => s.qty > 0));
       order.total_amount = Math.max(0, order.total_amount - refundTotal);
-      order.paid_amount = Math.max(0, order.paid_amount - refundTotal);
+
+      // 已结账/挂账场景才同步扣减实收；未结账订单实收本来就是 0，不能凭空退款。
+      if (
+        [OrderStatus.Completed, OrderStatus.OnAccount].includes(
+          order.status as OrderStatus,
+        )
+      ) {
+        order.paid_amount = Math.max(0, order.paid_amount - refundTotal);
+      }
       await orderRepo.save(order);
       await refundRepo.save(refundRows);
 
@@ -407,7 +527,7 @@ export class OrdersService {
         SensitiveAction.Refund,
         order.id,
         refundTotal,
-        `退菜 ${refundRows.length} 项，退款 ¥${centsToYuan(refundTotal)}`,
+        `退菜 ${refundRows.length} 项，退款 ¥${refundTotal}`,
       );
       return this.toItem(order);
     });
@@ -444,7 +564,7 @@ export class OrdersService {
         SensitiveAction.FreeOrder,
         order.id,
         order.total_amount,
-        `整单免单 ¥${centsToYuan(order.total_amount)}`,
+        `整单免单 ¥${order.total_amount}`,
       );
       return this.toItem(order);
     });
@@ -466,6 +586,47 @@ export class OrdersService {
       order.settled_at = new Date();
       await orderRepo.save(order);
       await this.releaseTable(manager, order);
+      return this.toItem(order);
+    });
+  }
+
+  /**
+   * 重新结账（completed / on_account → confirmed）
+   * - 清空结账记账字段，恢复为未结账状态
+   * - 若有桌台且当前空闲，自动恢复占用
+   * - void 订单不可重开
+   */
+  async reopen(user: AuthUser, id: number): Promise<OrderItem> {
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(Order);
+      const order = await this.findInShop(orderRepo, user, id);
+      if (
+        ![OrderStatus.Completed, OrderStatus.OnAccount].includes(
+          order.status as OrderStatus,
+        )
+      ) {
+        throw new BusinessException('仅已结账 / 挂账订单可重新结账');
+      }
+      order.status = OrderStatus.Confirmed;
+      order.settled_at = null;
+      order.paid_amount = 0;
+      order.change_amount = 0;
+      order.discount_amount = 0;
+      order.discount_type = null;
+      order.discount_name = null;
+      order.voucher_id = null;
+      order.payment_method_id = null;
+      order.payment_method_name = null;
+      await orderRepo.save(order);
+      await this.occupyTableIfIdle(manager, order);
+      await this.writeLog(
+        manager,
+        user,
+        SensitiveAction.ReopenOrder,
+        order.id,
+        order.total_amount,
+        `重新结账，清空记账 ¥${order.total_amount}`,
+      );
       return this.toItem(order);
     });
   }
@@ -527,6 +688,17 @@ export class OrdersService {
     }
   }
 
+  /** 重新结账时，若桌台当前空闲则恢复占用（别人已占用则跳过，不抢） */
+  private async occupyTableIfIdle(manager: EntityManager, order: Order): Promise<void> {
+    if (order.mode !== OrderMode.Table || !order.table_id) return;
+    const tableRepo = manager.getRepository(Table);
+    const table = await tableRepo.findOne({ where: { id: order.table_id } });
+    if (table && table.shop_id === order.shop_id && table.status === TableStatus.Idle) {
+      table.status = TableStatus.Occupied;
+      await tableRepo.save(table);
+    }
+  }
+
   /** 订单转出参（reports 复用） */
   toItem(o: Order): OrderItem {
     let items: OrderItemSnapshot[] = [];
@@ -537,9 +709,10 @@ export class OrdersService {
           dish_id: Number(s.dish_id) || 0,
           name: s.name ?? '',
           spec_name: s.spec_name ?? null,
-          unit_price: centsToYuan(Number(s.unit_price) || 0),
+          unit_price: Number(s.unit_price) || 0,
           qty: Number(s.qty) || 0,
-          amount: centsToYuan(Number(s.amount) || 0),
+          amount: Number(s.amount) || 0,
+          remark: s.remark ?? null,
         }));
       }
     } catch {
@@ -549,14 +722,15 @@ export class OrdersService {
       id: o.id,
       order_no: o.order_no,
       mode: o.mode,
+      guests: o.guests ?? null,
       table_id: o.table_id,
       ticket_no: o.ticket_no,
       status: o.status,
       items,
-      total_amount: centsToYuan(o.total_amount),
-      paid_amount: centsToYuan(o.paid_amount),
-      change_amount: centsToYuan(o.change_amount),
-      discount_amount: centsToYuan(o.discount_amount || 0),
+      total_amount: o.total_amount,
+      paid_amount: o.paid_amount,
+      change_amount: o.change_amount,
+      discount_amount: o.discount_amount || 0,
       discount_type: o.discount_type,
       discount_name: o.discount_name,
       voucher_id: o.voucher_id,

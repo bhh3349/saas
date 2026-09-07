@@ -1,4 +1,4 @@
-import {
+﻿import {
   Column,
   CreateDateColumn,
   Entity,
@@ -29,9 +29,17 @@ export class User {
   @Column({ type: 'varchar', length: 32 })
   name: string;
 
-  /** 角色：boss / cashier / finance */
+  /** 角色：boss / cashier / finance；boss 在员工档案显示为「老板」。is_primary=true 表示店主，is_primary=false 的 boss 表示店主创建的合伙人账号。 */
   @Column({ type: 'varchar', length: 16, default: UserRole.Cashier })
   role: string;
+
+  /**
+   * 是否主管理员（激活码激活的店主账号）：
+   * 唯一、默认最高权限，仅由激活码注册时置为 true；
+   * 员工档案展示该账号，并渲染店主徽标。
+   */
+  @Column({ type: 'boolean', default: false })
+  is_primary: boolean;
 
   /** 状态：active / disabled */
   @Column({ type: 'varchar', length: 16, default: UserStatus.Active })

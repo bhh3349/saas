@@ -16,7 +16,7 @@ export interface AttributeItem {
   created_at: Date;
 }
 
-const ATTRIBUTE_KINDS = ['spec', 'method', 'unit'] as const;
+const ATTRIBUTE_KINDS = ['spec', 'method', 'unit', 'topping', 'box', 'tag'] as const;
 
 @Injectable()
 export class AttributesService {

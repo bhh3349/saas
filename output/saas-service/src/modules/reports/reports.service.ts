@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, Repository } from 'typeorm';
 import { AuthUser } from '../../common/decorators/current-user.decorator';
@@ -16,6 +16,7 @@ export const ACTION_NAMES: Record<string, string> = {
   void_order: '作废订单',
   free_order: '免单',
   voucher: '优惠券核销',
+  reopen_order: '重新结账',
 };
 
 /** 优惠类型 → 中文名 */
@@ -232,7 +233,7 @@ function fmtDay(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** 解析 items JSON（保留原始分单位） */
+/** 解析 items JSON */
 function parseItemsRaw(raw: string): OrderItemSnapshot[] {
   try {
     const parsed = JSON.parse(raw || '[]');
@@ -322,7 +323,7 @@ export class ReportsService {
     while (cursor < end) {
       const d = fmtDay(cursor);
       const cur = map.get(d);
-      const revenue = cur ? cur.revenue / 100 : 0;
+      const revenue = cur ? cur.revenue : 0;
       items.push({
         date: d,
         order_count: cur ? cur.order_count : 0,
@@ -388,9 +389,9 @@ export class ReportsService {
       dish_id: r.dish_id,
       name: r.name,
       spec_name: r.spec_name,
-      unit_price: r.unit_price / 100,
+      unit_price: r.unit_price,
       qty: r.qty,
-      amount: r.amount / 100,
+      amount: r.amount,
       order_count: r.order_count,
       qty_ratio: totalQty ? +((r.qty / totalQty) * 100).toFixed(2) : 0,
       amount_ratio: totalAmount ? +((r.amount / totalAmount) * 100).toFixed(2) : 0,
@@ -401,7 +402,7 @@ export class ReportsService {
       items: rows.slice(startIdx, startIdx + pageSize),
       summary: {
         total_qty: totalQty,
-        total_amount: totalAmount / 100,
+        total_amount: totalAmount,
         order_count: orders.length,
       },
     };
@@ -438,9 +439,9 @@ export class ReportsService {
           ticket_no: o.ticket_no,
           name: it.name,
           spec_name: it.spec_name,
-          unit_price: it.unit_price / 100,
+          unit_price: it.unit_price,
           qty: it.qty,
-          amount: it.amount / 100,
+          amount: it.amount,
           payment_method_name: o.payment_method_name,
         });
       }
@@ -510,8 +511,8 @@ export class ReportsService {
       table_name: r.table_name,
       area: r.area,
       order_count: r.order_count,
-      revenue: r.revenue / 100,
-      avg_amount: r.order_count ? +(r.revenue / 100 / r.order_count).toFixed(2) : 0,
+      revenue: r.revenue,
+      avg_amount: r.order_count ? +(r.revenue / r.order_count).toFixed(2) : 0,
     }));
     const startIdx = (page - 1) * pageSize;
     return {
@@ -589,7 +590,7 @@ export class ReportsService {
     const rows: PromoStatsRow[] = list.map((r) => ({
       name: r.name,
       type: r.type,
-      discount_amount: r.amount / 100,
+      discount_amount: r.amount,
       order_count: r.order_count,
       gift_qty: 0,
     }));
@@ -598,7 +599,7 @@ export class ReportsService {
       items: rows,
       summary: {
         promo_count: rows.length,
-        discount_amount: totalAmount / 100,
+        discount_amount: totalAmount,
         order_count: totalOrders,
       },
     };
@@ -673,9 +674,9 @@ export class ReportsService {
       dish_id: r.dish_id,
       name: r.name,
       spec_name: r.spec_name,
-      unit_price: r.unit_price / 100,
+      unit_price: r.unit_price,
       qty: r.qty,
-      amount: r.amount / 100,
+      amount: r.amount,
       order_count: r.order_count,
       qty_ratio: totalQty ? +((r.qty / totalQty) * 100).toFixed(2) : 0,
       amount_ratio: totalAmount ? +((r.amount / totalAmount) * 100).toFixed(2) : 0,
@@ -686,7 +687,7 @@ export class ReportsService {
       items: rows.slice(startIdx, startIdx + pageSize),
       summary: {
         total_qty: totalQty,
-        total_amount: totalAmount / 100,
+        total_amount: totalAmount,
         refund_count: refunds.length,
       },
     };
@@ -720,13 +721,13 @@ export class ReportsService {
       action: r.action,
       action_name: ACTION_NAMES[r.action] ?? r.action,
       count: r.count,
-      amount: r.amount / 100,
+      amount: r.amount,
       count_ratio: totalCount ? +((r.count / totalCount) * 100).toFixed(2) : 0,
     }));
     return {
       total: rows.length,
       items: rows,
-      summary: { total_count: totalCount, total_amount: totalAmount / 100 },
+      summary: { total_count: totalCount, total_amount: totalAmount },
     };
   }
 
@@ -738,6 +739,7 @@ export class ReportsService {
     page = 1,
     pageSize = 20,
     action?: string,
+    keyword?: string,
   ): Promise<{
     total: number;
     items: SensitiveDetailRow[];
@@ -756,10 +758,20 @@ export class ReportsService {
       action_name: ACTION_NAMES[l.action] ?? l.action,
       target_type: l.target_type,
       target_id: l.target_id,
-      amount: l.amount / 100,
+      amount: l.amount,
       detail: l.detail,
     }));
     if (action && action !== 'all') rows = rows.filter((r) => r.action === action);
+    const kw = keyword?.trim().toLowerCase();
+    if (kw) {
+      rows = rows.filter(
+        (r) =>
+          r.operator.toLowerCase().includes(kw) ||
+          r.action_name.toLowerCase().includes(kw) ||
+          r.detail.toLowerCase().includes(kw) ||
+          (r.target_id != null && String(r.target_id).includes(kw)),
+      );
+    }
     const startIdx = (page - 1) * pageSize;
     return {
       total: rows.length,
@@ -810,7 +822,7 @@ export class ReportsService {
       voucher_id: r.voucher_id,
       coupon_name: r.coupon_name,
       redeem_count: r.redeem_count,
-      redeem_amount: r.redeem_amount / 100,
+      redeem_amount: r.redeem_amount,
       order_count: r.order_count,
       amount_ratio: totalAmount ? +((r.redeem_amount / totalAmount) * 100).toFixed(2) : 0,
     }));
@@ -819,7 +831,7 @@ export class ReportsService {
       items: rows,
       summary: {
         redeem_count: totalRedeem,
-        redeem_amount: totalAmount / 100,
+        redeem_amount: totalAmount,
         order_count: orders.filter((o) => o.voucher_id !== null).length,
       },
     };
@@ -850,9 +862,9 @@ export class ReportsService {
         settled_at: o.settled_at,
         discount_type: o.discount_type || '',
         discount_name: o.discount_name || DISCOUNT_TYPE_NAMES[o.discount_type || ''] || '其他优惠',
-        discount_amount: (o.discount_amount || 0) / 100,
-        total_amount: o.total_amount / 100,
-        paid_amount: o.paid_amount / 100,
+        discount_amount: o.discount_amount || 0,
+        total_amount: o.total_amount,
+        paid_amount: o.paid_amount,
         payment_method_name: o.payment_method_name,
         remark: o.remark,
       }));
@@ -955,7 +967,7 @@ export class ReportsService {
       discount_type: r.discount_type,
       discount_name: r.discount_name,
       order_count: r.order_count,
-      discount_amount: r.amount / 100,
+      discount_amount: r.amount,
       amount_ratio: totalAmount ? +((r.amount / totalAmount) * 100).toFixed(2) : 0,
       order_ratio: totalOrders ? +((r.order_count / totalOrders) * 100).toFixed(2) : 0,
     }));
@@ -963,7 +975,7 @@ export class ReportsService {
       total: rows.length,
       items: rows,
       summary: {
-        discount_amount: totalAmount / 100,
+        discount_amount: totalAmount,
         order_count: totalOrders,
       },
     };
@@ -986,7 +998,7 @@ export class ReportsService {
       where: { shop_id: user.shopId, settled_at: Between(start, end), status: OrderStatus.Completed },
     });
     const orderCount = orders.length;
-    const revenue = orders.reduce((s, o) => s + o.paid_amount, 0) / 100;
+    const revenue = orders.reduce((s, o) => s + o.paid_amount, 0);
     return {
       order_count: orderCount,
       revenue: +revenue.toFixed(2),
@@ -1022,15 +1034,15 @@ export class ReportsService {
     const methods: MethodSummary[] = [...methodMap.values()].map((m) => ({
       name: m.name,
       order_count: m.count,
-      amount: m.amount / 100,
+      amount: m.amount,
     }));
 
     return {
       from: fmtDay(start),
       to: fmtDay(new Date(end.getTime() - 1)),
       order_count: completed.length,
-      revenue: revenue / 100,
-      pending_receivable: pendingReceivable / 100,
+      revenue,
+      pending_receivable: pendingReceivable,
       methods,
     };
   }

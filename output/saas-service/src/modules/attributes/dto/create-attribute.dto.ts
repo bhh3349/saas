@@ -1,8 +1,8 @@
 import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateAttributeDto {
-  @IsIn(['spec', 'method', 'unit'])
-  kind: 'spec' | 'method' | 'unit';
+  @IsIn(['spec', 'method', 'unit', 'topping', 'box', 'tag'])
+  kind: 'spec' | 'method' | 'unit' | 'topping' | 'box' | 'tag';
 
   @IsString()
   @IsNotEmpty()

@@ -1,0 +1,35 @@
+/**
+ * 桌台区域接口
+ */
+import { request } from '../utils/request.uts'
+import { toInt } from '../utils/num.uts'
+
+export type AreaItem = {
+  id: number
+  name: string
+  sort: number
+  /** 该区域下的桌台数量 */
+  tableCount: number
+}
+
+/** 区域列表（已按 sort 升序） */
+export function fetchAreas(): Promise<AreaItem[]> {
+  return request<UTSJSONObject>({
+    url: '/areas',
+    method: 'GET',
+    raw: true,
+  }).then((raw): AreaItem[] => {
+    const items = raw.getArray<UTSJSONObject>('data') ?? []
+    const areas: AreaItem[] = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      areas.push({
+        id: toInt((item['id'] ?? 0).toString()),
+        name: (item['name'] ?? '').toString(),
+        sort: toInt((item['sort'] ?? 0).toString()),
+        tableCount: toInt((item['tableCount'] ?? 0).toString()),
+      } as AreaItem)
+    }
+    return areas
+  })
+}

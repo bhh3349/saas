@@ -15,6 +15,10 @@ export class Shop {
   @Column({ type: 'varchar', length: 128 })
   name: string;
 
+  /** 门店地址（注册时由商家填写，门店档案只读展示） */
+  @Column({ type: 'varchar', length: 255, default: '' })
+  address: string;
+
   @Column({ type: 'varchar', length: 16, default: ShopStatus.Active })
   status: string;
 

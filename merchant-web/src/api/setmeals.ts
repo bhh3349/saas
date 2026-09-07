@@ -1,6 +1,6 @@
 import { request } from './http'
 
-/** 套餐分组内菜品（price 为分） */
+/** 套餐分组内菜品（price 为元） */
 export interface SetmealGroupDish {
   id: number
   name: string
@@ -25,7 +25,7 @@ export interface SetmealItem {
   code: string
   name: string
   category: string
-  /** 价格（分） */
+  /** 价格（元） */
   price: number
   groups: SetmealGroup[]
   print_enable: boolean
@@ -39,7 +39,7 @@ export interface SetmealPayload {
   code?: string
   name: string
   category?: string
-  /** 价格（分） */
+  /** 价格（元） */
   price: number
   groups: SetmealGroup[]
   print_enable?: boolean

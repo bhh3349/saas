@@ -18,6 +18,13 @@ import { PutBucketDto } from './dto/put-bucket.dto';
 export class BucketsController {
   constructor(private readonly bucketsService: BucketsService) {}
 
+  /** 读取票据样式（收银端打印结账单用；老板 / 收银员可读，仅限 print-style 一个 key） */
+  @Get('print-style')
+  @Roles(UserRole.Boss, UserRole.Cashier)
+  getPrintStyle(@CurrentUser() user: AuthUser) {
+    return this.bucketsService.get(user, 'print-style');
+  }
+
   /** 读取某个配置桶，不存在返回 null */
   @Get(':key')
   get(@CurrentUser() user: AuthUser, @Param('key') key: string) {

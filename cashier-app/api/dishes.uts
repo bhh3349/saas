@@ -1,0 +1,66 @@
+/**
+ * 菜品接口
+ */
+import { request } from '../utils/request.uts'
+import { toInt, toNum } from '../utils/num.uts'
+
+export type DishSpec = {
+  name: string
+  /** 加价（元） */
+  price_delta: number
+}
+
+export type DishItem = {
+  id: number
+  name: string
+  category: string
+  /** 单价（元） */
+  price: number
+  specs: DishSpec[]
+  code: string
+  spec_code: string
+  /** 普通菜 / 称重菜 */
+  type: string
+  sort_order: number
+  status: string
+  sold_out: boolean
+}
+
+/** 点餐菜单（仅在售 + 未沽清） */
+export async function fetchMenu(): Promise<DishItem[]> {
+  const raw = await request<UTSJSONObject>({
+    url: '/dishes/menu',
+    method: 'GET',
+    raw: true,
+  })
+  const items = raw.getArray<UTSJSONObject>('data') ?? []
+  const dishes: DishItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    const specData = item.getArray<UTSJSONObject>('specs') ?? []
+    const specs: DishSpec[] = []
+    for (let j = 0; j < specData.length; j++) {
+      const spec = specData[j]
+      specs.push({
+        name: (spec['name'] ?? '').toString(),
+        price_delta: toNum((spec['price_delta'] ?? 0).toString()),
+      } as DishSpec)
+    }
+    const code = item['code']
+    const category = item['category']
+    dishes.push({
+      id: toInt((item['id'] ?? 0).toString()),
+      name: (item['name'] ?? '').toString(),
+      category: category == null ? '' : category.toString(),
+      price: toNum((item['price'] ?? 0).toString()),
+      specs: specs,
+      code: code == null ? '' : code.toString(),
+      spec_code: (item['spec_code'] ?? '').toString(),
+      type: (item['type'] ?? 'normal').toString(),
+      sort_order: toInt((item['sort_order'] ?? 0).toString()),
+      status: (item['status'] ?? 'on').toString(),
+      sold_out: (item['sold_out'] ?? false) == true,
+    } as DishItem)
+  }
+  return dishes
+}

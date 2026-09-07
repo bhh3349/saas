@@ -10,6 +10,7 @@ import Icon from '../components/Icon';
 import BatchImportDishModal from '../components/BatchImportDishModal';
 import { exportAoaToXlsx } from '../utils/excel';
 import { getStoredShop } from '../api/http';
+import { getBucket } from '../api/buckets';
 import CreateSetMealModal from '../components/CreateSetMealModal';
 import { listCategoriesApi } from '../api/categories';
 import {
@@ -49,6 +50,15 @@ interface Dish {
   status: DishStatus;
   /** 多规格：存在且长度 > 1 时，表格按规格展开多行、公共列合并；未设置时按单规格展示 */
   specs?: DishSpec[];
+  unit: string;
+  serveMode: string;
+  printEnable: boolean;
+  printDept: string;
+  tempPriceChange: boolean;
+  manualDiscount: boolean;
+  minAmount: number;
+  deltaAmount: number;
+  fractional: boolean;
 }
 
 /** 新增/编辑表单数据 */
@@ -92,16 +102,8 @@ const BATCH_OPTIONS = [
   { value: 'batchOn', label: '批量在售' },
   { value: 'batchOff', label: '批量停售' },
   { value: 'batchDelete', label: '批量删除' },
-  { value: 'batchImage', label: '批量传图' },
   { value: 'batchPrice', label: '批量改价' },
-  { value: 'batchMnemonic', label: '批量设置助记码' },
   { value: 'batchPrint', label: '批量设置打印配置' },
-  { value: 'batchDept', label: '批量设置出品部门' },
-  { value: 'batchDesc', label: '批量设置菜品描述' },
-  { value: 'batchDetail', label: '批量设置菜品详细描述' },
-  { value: 'batchBarcode', label: '批量设置条形码' },
-  { value: 'batchReplace', label: '批量替换套餐子菜' },
-  { value: 'batchAttrs', label: '批量修改多项菜品属性' },
 ];
 
 /** 菜品单位选项 */
@@ -112,6 +114,17 @@ const SERVE_MODE_OPTIONS = ['即起', '叫起'].map((s) => ({ value: s, label: s
 
 /** 出品档口选项 */
 const DEPT_OPTIONS = ['后厨', '凉菜间', '热菜间', '甜品间', '水吧'].map((d) => ({ value: d, label: d }));
+
+/** 批量打印配置表单 */
+interface BatchPrintForm {
+  printEnable: boolean;
+  printDept: string;
+}
+
+/** 批量改价表单 */
+interface BatchPriceForm {
+  price: number;
+}
 
 const emptyForm: DishForm = {
   id: null,
@@ -140,7 +153,7 @@ function toLocalDish(item: ApiDish): Dish {
     item.specs && item.specs.length > 1
       ? item.specs.map((s) => ({
           spec: s.name,
-          price: Math.round((item.price + s.price_delta) * 100) / 100,
+          price: item.price + s.price_delta,
         }))
       : undefined;
   return {
@@ -153,6 +166,15 @@ function toLocalDish(item: ApiDish): Dish {
     specCode: item.spec_code || '',
     status: item.status === '停售' ? '停售' : '在售',
     specs,
+    unit: item.unit || '份',
+    serveMode: item.serve_mode || '即起',
+    printEnable: Boolean(item.print_enable),
+    printDept: item.print_dept || '',
+    tempPriceChange: Boolean(item.temp_price_change),
+    manualDiscount: item.manual_discount === undefined ? true : Boolean(item.manual_discount),
+    minAmount: Number(item.min_amount ?? 1),
+    deltaAmount: Number(item.delta_amount ?? 1),
+    fractional: Boolean(item.fractional),
   };
 }
 
@@ -185,6 +207,10 @@ export default function DishLibrary() {
 
   const [sortOpen, setSortOpen] = useState(false);
   const [toast, setToast] = useState<ToastData | null>(null);
+  const [batchPrintOpen, setBatchPrintOpen] = useState(false);
+  const [batchPrintForm, setBatchPrintForm] = useState<BatchPrintForm>({ printEnable: true, printDept: '' });
+  const [batchPriceOpen, setBatchPriceOpen] = useState(false);
+  const [batchPriceForm, setBatchPriceForm] = useState<BatchPriceForm>({ price: 0 });
 
   /** 动态分类：全部 + 数据中出现的分类（保持出现顺序） */
   const categories = useMemo(() => {
@@ -193,11 +219,28 @@ export default function DishLibrary() {
 
   /** 后端分类（含 0 关联，用于创建菜品弹窗下拉） */
   const [serverCategoryOptions, setServerCategoryOptions] = useState<string[]>([]);
+  const [printDeptOptions, setPrintDeptOptions] = useState(DEPT_OPTIONS);
   useEffect(() => {
     let active = true;
     listCategoriesApi()
       .then((cats) => {
         if (active) setServerCategoryOptions(cats.map((c) => c.name));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getBucket<Array<{ kind?: string; name?: string }>>('stall')
+      .then((stalls) => {
+        if (!active) return;
+        const options = (Array.isArray(stalls) ? stalls : [])
+          .filter((s) => s?.name && s.kind === 'kitchen')
+          .map((s) => ({ value: String(s.name), label: String(s.name) }));
+        setPrintDeptOptions(options.length > 0 ? options : DEPT_OPTIONS);
       })
       .catch(() => {});
     return () => {
@@ -327,6 +370,22 @@ export default function DishLibrary() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
+  const dishFormPayload = () => ({
+    name: form.name.trim(),
+    category: form.category,
+    type: form.type,
+    price: form.price,
+    unit: form.unit,
+    serve_mode: form.serveMode,
+    print_enable: form.printEnable,
+    print_dept: form.printEnable ? form.printDept : '',
+    temp_price_change: form.tempPriceChange,
+    manual_discount: form.manualDiscount,
+    min_amount: Math.max(1, Math.floor(form.minAmount || 1)),
+    delta_amount: Math.max(1, Math.floor(form.deltaAmount || 1)),
+    fractional: form.fractional,
+  });
+
   const submitForm = async () => {
     if (!form.name.trim()) {
       setToast({ type: 'warning', text: '请输入菜品名称' });
@@ -342,21 +401,12 @@ export default function DishLibrary() {
     }
     try {
       if (editing) {
-        await updateDishApi(Number(editing.id), {
-          name: form.name.trim(),
-          category: form.category,
-          type: form.type,
-          price: form.price,
-          // 多规格在「添加多个规格」中维护，编辑时保持后端原规格
-        });
+        await updateDishApi(Number(editing.id), dishFormPayload());
         setToast({ type: 'success', text: '修改成功' });
       } else {
         const now = Date.now();
         await createDishApi({
-          name: form.name.trim(),
-          category: form.category,
-          type: form.type,
-          price: form.price,
+          ...dishFormPayload(),
           code: `D${now}`,
           spec_code: `S${now}`,
         });
@@ -435,7 +485,7 @@ export default function DishLibrary() {
       ['菜品名称', '菜品分类', '菜品类型', '菜品价格', '菜品编码', '规格编码', '状态', '菜品单位', '菜品规格'],
       ...dishes.flatMap((d) => {
         const specs = d.specs && d.specs.length > 0 ? d.specs : [{ spec: '标准', price: d.price }];
-        return specs.map((s) => [d.name, d.category, d.type, s.price, d.code, d.specCode, d.status, '份', s.spec]);
+        return specs.map((s) => [d.name, d.category, d.type, s.price, d.code, d.specCode, d.status, d.unit || '份', s.spec]);
       }),
     ];
     const now = new Date();
@@ -495,10 +545,63 @@ export default function DishLibrary() {
     }
   };
 
+  const confirmBatchPrice = async () => {
+    if (batchPriceForm.price < 0) {
+      setToast({ type: 'warning', text: '价格不能为负数' });
+      return;
+    }
+    try {
+      await Promise.all(
+        selectedIds.map((id) => updateDishApi(Number(id), { price: batchPriceForm.price })),
+      );
+      setDishes((prev) => prev.map((d) => (selectedIds.includes(d.id) ? { ...d, price: batchPriceForm.price } : d)));
+      setToast({ type: 'success', text: `已批量改价 ${selectedIds.length} 个菜品` });
+      setBatchPriceOpen(false);
+      setSelectedIds([]);
+      setBatchMode(false);
+    } catch (e) {
+      setToast({ type: 'error', text: (e as Error).message || '批量改价失败' });
+    }
+  };
+
+  const confirmBatchPrint = async () => {
+    if (batchPrintForm.printEnable && !batchPrintForm.printDept) {
+      setToast({ type: 'warning', text: '请选择出品档口' });
+      return;
+    }
+    try {
+      await Promise.all(
+        selectedIds.map((id) =>
+          updateDishApi(Number(id), {
+            print_enable: batchPrintForm.printEnable,
+            print_dept: batchPrintForm.printEnable ? batchPrintForm.printDept : '',
+          }),
+        ),
+      );
+      setDishes((prev) =>
+        prev.map((d) =>
+          selectedIds.includes(d.id)
+            ? {
+                ...d,
+                printEnable: batchPrintForm.printEnable,
+                printDept: batchPrintForm.printEnable ? batchPrintForm.printDept : '',
+              }
+            : d,
+        ),
+      );
+      setToast({ type: 'success', text: `已批量更新打印配置 ${selectedIds.length} 个菜品` });
+      setBatchPrintOpen(false);
+      setSelectedIds([]);
+      setBatchMode(false);
+    } catch (e) {
+      setToast({ type: 'error', text: (e as Error).message || '批量打印配置失败' });
+    }
+  };
+
   /** 批量操作下拉动作 */
   const handleBatchAction = (v: string) => {
     setBatchAction('');
-    const needSelect = ['batchOn', 'batchOff', 'batchDelete'].includes(v);
+    const needSelect = ['batchOn', 'batchOff', 'batchDelete', 'batchPrice', 'batchPrint'].includes(v);
     if (needSelect) {
       if (!batchMode) {
         setBatchMode(true);
@@ -512,8 +615,15 @@ export default function DishLibrary() {
       if (v === 'batchOn') return handleBatchStatus('在售');
       if (v === 'batchOff') return handleBatchStatus('停售');
       if (v === 'batchDelete') return setBatchDelOpen(true);
+      if (v === 'batchPrice') {
+        setBatchPriceForm({ price: 0 });
+        return setBatchPriceOpen(true);
+      }
+      if (v === 'batchPrint') {
+        setBatchPrintForm({ printEnable: true, printDept: '' });
+        return setBatchPrintOpen(true);
+      }
     }
-    setToast({ type: 'info', text: `「${BATCH_OPTIONS.find((o) => o.value === v)?.label ?? v}」功能开发中` });
   };
 
   const exitBatchMode = () => {
@@ -589,7 +699,7 @@ export default function DishLibrary() {
         <button
           className="tm-btn tm-btn-default"
           type="button"
-          onClick={() => setToast({ type: 'info', text: '「菜品打印配置」功能开发中' })}
+          onClick={() => handleBatchAction('batchPrint')}
         >
           菜品打印配置
         </button>
@@ -983,7 +1093,7 @@ export default function DishLibrary() {
                         containerStyle={{ flex: 1 }}
                         value={form.printDept}
                         placeholder="请选择打印方案"
-                        options={DEPT_OPTIONS}
+                        options={printDeptOptions}
                         ariaLabel="选择出品档口"
                         onChange={(v) => updateForm('printDept', v)}
                       />
@@ -1126,6 +1236,102 @@ export default function DishLibrary() {
         onConfirm={confirmDelete}
         onCancel={() => setDelId(null)}
       />
+      {batchPriceOpen && (
+        <div className="modal-mask" onClick={() => setBatchPriceOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">批量改价</div>
+              <button className="modal-close" aria-label="关闭" type="button" onClick={() => setBatchPriceOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="dish-form-item">
+                <label className="dish-form-item-label">
+                  <span className="required-mark">*</span>统一售价
+                </label>
+                <div className="dish-form-item-control">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={batchPriceForm.price}
+                    onChange={(e) => setBatchPriceForm({ price: Number(e.target.value) })}
+                  />
+                  <span className="area-form-suffix">元</span>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button className="tm-btn tm-btn-default" type="button" onClick={() => setBatchPriceOpen(false)}>
+                取消
+              </button>
+              <button className="tm-btn tm-btn-primary" type="button" onClick={confirmBatchPrice}>
+                确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {batchPrintOpen && (
+        <div className="modal-mask" onClick={() => setBatchPrintOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div className="modal-title">批量设置打印配置</div>
+              <button className="modal-close" aria-label="关闭" type="button" onClick={() => setBatchPrintOpen(false)}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body">
+              <div className="dish-form-item">
+                <label className="dish-form-item-label">是否需要打印</label>
+                <div className="dish-form-item-control">
+                  <div className="area-form-radios">
+                    {['打印', '不打印'].map((p) => (
+                      <label key={p} className="radio-item">
+                        <input
+                          type="radio"
+                          name="batchPrintEnable"
+                          checked={batchPrintForm.printEnable === (p === '打印')}
+                          onChange={() => setBatchPrintForm((prev) => ({ ...prev, printEnable: p === '打印' }))}
+                        />
+                        <span className="radio-dot" />
+                        <span>{p}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {batchPrintForm.printEnable && (
+                <div className="dish-form-item">
+                  <label className="dish-form-item-label">
+                    <span className="required-mark">*</span>出品档口
+                  </label>
+                  <div className="dish-form-item-control">
+                    <CommonSelect
+                      width="100%"
+                      containerStyle={{ flex: 1 }}
+                      value={batchPrintForm.printDept}
+                      placeholder="请选择出品档口"
+                      options={printDeptOptions}
+                      ariaLabel="批量出品档口"
+                      onChange={(v) => setBatchPrintForm((prev) => ({ ...prev, printDept: v }))}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <button className="tm-btn tm-btn-default" type="button" onClick={() => setBatchPrintOpen(false)}>
+                取消
+              </button>
+              <button className="tm-btn tm-btn-primary" type="button" onClick={confirmBatchPrint}>
+                确认
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <ConfirmModal
         open={batchDelOpen}
         title="确认批量删除"

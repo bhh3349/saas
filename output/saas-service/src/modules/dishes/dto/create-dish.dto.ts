@@ -2,12 +2,15 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { MaxLength } from 'class-validator';
 
 /** 规格：如「大份 / 加 2 元」 */
 export class DishSpecDto {
@@ -26,11 +29,10 @@ export class CreateDishDto {
   @IsString()
   name: string;
 
-  @IsOptional()
   @IsString()
   category?: string;
 
-  /** 单价（元），内部以分存储 */
+  /** 单价（元） */
   @Type(() => Number)
   @IsNumber()
   @Min(0)
@@ -58,6 +60,49 @@ export class CreateDishDto {
   @IsString()
   type?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  serve_mode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  print_enable?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  print_dept?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  temp_price_change?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  manual_discount?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  min_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  delta_amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  fractional?: boolean;
+
   /** 排序值 */
   @IsOptional()
   @Type(() => Number)
@@ -81,7 +126,7 @@ export class ImportSpecRowDto {
   @IsString()
   type?: string;
 
-  /** 单价（元），内部以分存储 */
+  /** 单价（元） */
   @Type(() => Number)
   @IsNumber()
   @Min(0)

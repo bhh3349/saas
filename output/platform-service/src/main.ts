@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { AppModule } from './app.module';
@@ -34,6 +35,12 @@ async function bootstrap(): Promise<void> {
   // 允许较大的 JSON body（头像等 base64 数据）；限制 8MB
   app.use(json({ limit: '8mb' }));
   app.use(urlencoded({ extended: true, limit: '8mb' }));
+
+  // 全局：API 响应禁用缓存，避免浏览器复用旧响应
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }),

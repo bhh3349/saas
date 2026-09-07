@@ -2,16 +2,17 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { DishStatus } from '../common/enums';
 
 /**
  * 菜品
- * 单价与规格加价均以「分」存储（整数），避免浮点金额误差；
- * API 层出入参统一用「元」。
+ * 单价与规格加价均以「元」存储（带小数），全链路统一用「元」。
  */
 @Entity('dishes')
+@Index('idx_dishes_shop_sort', ['shop_id', 'sort_order', 'id'])
 export class Dish {
   @PrimaryGeneratedColumn()
   id: number;
@@ -28,11 +29,11 @@ export class Dish {
   @Column({ type: 'varchar', length: 32, default: '默认分类' })
   category: string;
 
-  /** 单价（分） */
-  @Column({ type: 'integer' })
+  /** 单价（元） */
+  @Column({ type: 'real' })
   price: number;
 
-  /** 规格 JSON：[{ name: '大份', price_delta: 200 }]，price_delta 单位分 */
+  /** 规格 JSON：[{ name: '大份', price_delta: 2 }]，price_delta 单位元 */
   @Column({ type: 'text', default: '[]' })
   specs: string;
 
@@ -47,6 +48,33 @@ export class Dish {
   /** 菜品类型：普通菜 / 称重菜 */
   @Column({ type: 'varchar', length: 16, default: '普通菜' })
   type: string;
+
+  @Column({ type: 'varchar', length: 16, default: '份' })
+  unit: string;
+
+  @Column({ type: 'varchar', length: 16, default: '即起' })
+  serve_mode: string;
+
+  @Column({ type: 'boolean', default: false })
+  print_enable: boolean;
+
+  @Column({ type: 'varchar', length: 64, default: '' })
+  print_dept: string;
+
+  @Column({ type: 'boolean', default: false })
+  temp_price_change: boolean;
+
+  @Column({ type: 'boolean', default: true })
+  manual_discount: boolean;
+
+  @Column({ type: 'integer', default: 1 })
+  min_amount: number;
+
+  @Column({ type: 'integer', default: 1 })
+  delta_amount: number;
+
+  @Column({ type: 'boolean', default: false })
+  fractional: boolean;
 
   /** 排序值（越小越靠前） */
   @Column({ type: 'integer', default: 0 })

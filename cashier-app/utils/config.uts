@@ -1,0 +1,60 @@
+/**
+ * 环境配置
+ *
+ * 收银端可在 App 内「首页 → 头像 → 环境切换」一键切换环境，
+ * 选择结果持久化到本地 storage，下一个请求立即生效。
+ *
+ * 环境清单：
+ *  - dev  : 10.0.2.2 是 Android 模拟器访问宿主机 localhost 的标准映射（MuMu 已验证可连）
+ *  - lan  : 真机联调时改为电脑 / 收银主机的局域网 IP（按实际环境改这里）
+ *  - prod : 云服务器 saas-service 直连
+ */
+export type EnvItem = {
+  key: string
+  label: string
+  base_url: string
+}
+
+/** 环境清单（新增环境在此追加即可） */
+export const ENVS: EnvItem[] = [
+  { key: 'dev', label: '开发环境（桥接模拟器）', base_url: 'http://192.168.1.5:3200' } as EnvItem,
+  { key: 'lan', label: '局域网（真机联调）', base_url: 'http://192.168.1.10:3200' } as EnvItem,
+  { key: 'prod', label: '生产环境（云服务器）', base_url: 'http://140.143.201.204:3200' } as EnvItem,
+]
+
+/** 未手动切换时使用的环境下标 */
+const DEFAULT_ENV_INDEX = 0
+
+const ENV_STORAGE_KEY = 'env_base_url'
+
+/** 请求超时（毫秒） */
+export const TIMEOUT: number = 10000
+
+/** 当前生效的 BASE_URL：本地切换过的环境优先，否则走默认环境 */
+export function getBaseUrl(): string {
+  const saved = (uni.getStorageSync(ENV_STORAGE_KEY) as string) ?? ''
+  if (saved.length > 0) {
+    for (let i = 0; i < ENVS.length; i++) {
+      if (ENVS[i].base_url == saved) {
+        return saved
+      }
+    }
+  }
+  return ENVS[DEFAULT_ENV_INDEX].base_url
+}
+
+/** 切换环境并持久化（下一个请求立即生效） */
+export function switchEnv(baseUrl: string): void {
+  uni.setStorageSync(ENV_STORAGE_KEY, baseUrl)
+}
+
+/** 当前环境展示名（首页弹出层显示用） */
+export function currentEnvLabel(): string {
+  const url = getBaseUrl()
+  for (let i = 0; i < ENVS.length; i++) {
+    if (ENVS[i].base_url == url) {
+      return ENVS[i].label
+    }
+  }
+  return url
+}

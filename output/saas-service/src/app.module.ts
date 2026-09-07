@@ -16,6 +16,8 @@ import { Category } from './entities/category.entity';
 import { Attribute } from './entities/attribute.entity';
 import { Setmeal } from './entities/setmeal.entity';
 import { ShopBucket } from './entities/shop-bucket.entity';
+import { Device } from './entities/device.entity';
+import { Printer } from './entities/printer.entity';
 import { ShopStatusGuard } from './common/guards/shop-status.guard';
 import { AttributesModule } from './modules/attributes/attributes.module';
 import { BucketsModule } from './modules/buckets/buckets.module';
@@ -30,13 +32,15 @@ import { SetmealsModule } from './modules/setmeals/setmeals.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { AreasModule } from './modules/areas/areas.module';
+import { DevicesModule } from './modules/devices/devices.module';
+import { PrintersModule } from './modules/printers/printers.module';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: getConfig().dbPath,
-      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket, OrderRefund, OperationLog],
+      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket, OrderRefund, OperationLog, Device, Printer],
       // 开发期自动建表；生产可改为 migration 或预执行建表脚本
       synchronize: true,
     }),
@@ -59,6 +63,8 @@ import { AreasModule } from './modules/areas/areas.module';
     OrdersModule,
     ReportsModule,
     InternalModule,
+    DevicesModule,
+    PrintersModule,
   ],
   providers: [
     // 店铺停用全局拦截（解析 JWT → 本地快照 → disabled 403）

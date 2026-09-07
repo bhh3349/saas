@@ -1,0 +1,454 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航：首页图标 + 功能名 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-home" @click="goHome">
+          <text class="home-icon">⌂</text>
+          <text class="home-text">首页</text>
+        </view>
+        <text class="nav-title">桌台点餐</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+
+    <!-- 搜索框：桌台名称 / 首字母 -->
+    <view class="search-bar">
+      <view class="search-box">
+        <text class="search-icon">🔍</text>
+        <input
+          class="search-input"
+          v-model="keyword"
+          placeholder="搜索桌台名称 / 首字母"
+          confirm-type="search"
+        />
+      </view>
+    </view>
+
+    <!-- 区域按钮：第一个为「已就餐」 -->
+    <scroll-view class="area-scroll" scroll-x>
+      <view class="area-row">
+        <view
+          class="area-btn"
+          :class="activeArea == eatingKey ? 'area-on' : ''"
+          @click="selectArea(eatingKey)"
+        >
+          <text class="area-btn-label" :class="activeArea == eatingKey ? 'area-on-label' : ''">已就餐</text>
+        </view>
+        <view
+          v-for="a in areas"
+          :key="a.id"
+          class="area-btn"
+          :class="activeArea == a.name ? 'area-on' : ''"
+          @click="selectArea(a.name)"
+        >
+          <text class="area-btn-label" :class="activeArea == a.name ? 'area-on-label' : ''">{{ a.name }}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <!-- 桌台卡片区 -->
+    <scroll-view class="table-scroll" scroll-y>
+      <view class="table-grid">
+        <view
+          class="table-card"
+          :class="t.status == 'occupied' ? 'card-occupied' : 'card-idle'"
+          v-for="t in filteredTables"
+          :key="t.id"
+          @click="onTable(t)"
+        >
+          <text class="table-name">{{ t.name }}</text>
+          <text class="table-guests">默认 {{ t.capacity }} 人 / 实际 {{ actualGuests(t) }}</text>
+          <text v-if="t.order" class="table-amount">¥{{ amountText(t) }}</text>
+          <text v-else class="table-empty">未开台</text>
+          <text v-if="t.order" class="table-duration">用餐 {{ durationText(t) }}</text>
+        </view>
+      </view>
+      <view v-if="filteredTables.length == 0" class="empty">
+        <text class="empty-label">暂无桌台</text>
+      </view>
+    </scroll-view>
+  </view>
+</template>
+
+<script>
+  import { fetchAreas, type AreaItem } from '../../api/areas.uts'
+  import { fetchTablesAll, type TableItem } from '../../api/tables.uts'
+  import { fetchActiveOrders, createOrder, type OrderItem, type CreateOrderItem } from '../../api/orders.uts'
+  import { toNum } from '../../utils/num.uts'
+
+  /** 桌台 + 活跃订单合并视图 */
+  type TableView = {
+    id: number
+    name: string
+    area: string
+    capacity: number
+    status: string
+    created_at: string
+    order: OrderItem | null
+  }
+
+  /** 「已就餐」特殊区域 key */
+  const EATING_KEY = '__eating__'
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        areas: [] as Array<AreaItem>,
+        tables: [] as Array<TableView>,
+        activeArea: EATING_KEY,
+        keyword: ''
+      }
+    },
+    computed: {
+      eatingKey(): string {
+        return EATING_KEY
+      },
+      filteredTables(): TableView[] {
+        const kw = this.keyword.trim().toLowerCase()
+        let list: TableView[] = []
+        if (this.activeArea == EATING_KEY) {
+          // 「已就餐」：已开台桌台，按开台先后排序（先开台的在前）
+          list = this.tables
+            .filter((t) => t.status == 'occupied')
+            .sort((a, b) => openTime(a) - openTime(b))
+        } else {
+          // 具体区域：该区域全部桌台，按后台顺序
+          list = this.tables
+            .filter((t) => t.area == this.activeArea)
+            .sort((a, b) => a.id - b.id)
+        }
+        if (kw) {
+          list = list.filter((t) => t.name.toLowerCase().includes(kw))
+        }
+        return list
+      }
+    },
+    onLoad() {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+    },
+    onShow() {
+      this.load()
+    },
+    methods: {
+      async load() {
+        try {
+          const areas = await fetchAreas()
+          const tables = await fetchTablesAll()
+          this.areas.splice(0, this.areas.length)
+          for (let i = 0; i < areas.length; i++) {
+            this.areas.push(areas[i])
+          }
+
+          const tableViews: TableView[] = []
+          const activeOrders = await fetchActiveOrders()
+          for (let i = 0; i < tables.length; i++) {
+            const t = tables[i]
+            let activeOrder: OrderItem | null = null
+            for (let j = 0; j < activeOrders.length; j++) {
+              const o = activeOrders[j]
+              if (o.table_id != null && o.table_id! == t.id) {
+                activeOrder = o
+                break
+              }
+            }
+            tableViews.push(toTableView(t, activeOrder))
+          }
+          this.tables.splice(0, this.tables.length)
+          for (let i = 0; i < tableViews.length; i++) {
+            this.tables.push(tableViews[i])
+          }
+          if (tableViews.length > 0) {
+            this.activeArea = tableViews[0].area
+          }
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        }
+      },
+      selectArea(area: string) {
+        this.activeArea = area
+      },
+      goHome() {
+        uni.reLaunch({ url: '/pages/home/index' })
+      },
+      onTable(t: TableView) {
+        if (t.status == 'occupied' && t.order) {
+          // 占用桌台 → 订单详情页
+          uni.navigateTo({
+            url: '/pages/order-detail/index?order_id=' + (t.order?.id ?? 0).toString() + '&table_name=' + encodeURIComponent(t.name)
+          })
+        } else {
+          // 空闲桌台 → 弹窗选人数 → 开台 → 点菜
+          this.openTable(t)
+        }
+      },
+      async openTable(t: TableView) {
+        uni.showModal({
+          title: '开台',
+          editable: true,
+          placeholderText: '请输入用餐人数',
+          content: '',
+          success: (res) => {
+            if (!res.confirm) return
+            this.doOpenTable(t, res.content ?? '')
+          }
+        })
+      },
+      async doOpenTable(t: TableView, rawGuests: string) {
+        const guests = rawGuests.length > 0 ? toNum(rawGuests) : t.capacity
+        if (guests == 0 || guests < 1 || guests > 99) {
+          uni.showToast({ title: '请输入 1-99 之间的人数', icon: 'none' })
+          return
+        }
+        try {
+          uni.showLoading({ title: '开台中...' })
+          const order = await createOrder({
+            mode: 'table',
+            table_id: t.id,
+            guests: guests,
+            items: [] as CreateOrderItem[]
+          })
+          uni.hideLoading()
+          // 跳转到点菜页（桌台模式，带 order_id 用于后续追加菜品）
+          uni.navigateTo({
+            url: '/pages/order/index?table_id=' + t.id.toString() + '&table_name=' + encodeURIComponent(t.name) + '&order_id=' + order.id.toString() + '&guests=' + guests.toString()
+          })
+          // 刷新桌台列表
+          this.load()
+        } catch (e) {
+          uni.hideLoading()
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        }
+      },
+      actualGuests(t: TableView): string {
+        if (t.order == null || t.order!.guests == 0) return '-'
+        return (t.order?.guests ?? 0).toString()
+      },
+      amountText(t: TableView): string {
+        return (t.order ? t.order.total_amount : 0).toFixed(2)
+      },
+      durationText(t: TableView): string {
+        if (!t.order) return ''
+        const start = new Date(t.order.created_at).getTime()
+        let mins = Math.floor((Date.now() - start) / 60000)
+        if (Number.isNaN(mins) || mins < 0) mins = 0
+        if (mins < 1) return '<1分钟'
+        if (mins < 60) return mins + '分钟'
+        const h = Math.floor(mins / 60)
+        const rest = mins % 60
+        return h + '小时' + (rest > 0 ? rest + '分' : '')
+      }
+    }
+  }
+
+  /** 开台时间戳（毫秒） */
+  function openTime(t: TableView): number {
+    if (!t.order) return 0
+    return new Date(t.order.created_at).getTime()
+  }
+
+  /** 桌台基础信息 + 活跃订单合并 */
+  function toTableView(t: TableItem, order: OrderItem | null): TableView {
+    return {
+      id: t.id,
+      name: t.name,
+      area: t.area,
+      capacity: t.capacity,
+      status: t.status,
+      created_at: t.created_at,
+      order: order
+    }
+  }
+</script>
+
+<style>
+  .page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f6f8;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .nav-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 88rpx;
+    padding: 0 24rpx;
+  }
+
+  .nav-home {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 140rpx;
+  }
+
+  .home-icon {
+    font-size: 44rpx;
+    color: #ffffff;
+    margin-right: 8rpx;
+    font-weight: bold;
+  }
+
+  .home-text {
+    font-size: 26rpx;
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .nav-title {
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+  }
+
+  .nav-right {
+    width: 140rpx;
+  }
+
+  /* 搜索框 */
+  .search-bar {
+    padding: 20rpx 24rpx 0;
+  }
+
+  .search-box {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    height: 76rpx;
+    padding: 0 24rpx;
+  }
+
+  .search-icon {
+    font-size: 28rpx;
+    margin-right: 12rpx;
+  }
+
+  .search-input {
+    flex: 1;
+    font-size: 30rpx;
+    color: #333333;
+  }
+
+  /* 区域按钮 */
+  .area-scroll {
+    width: 100%;
+    white-space: nowrap;
+    margin-top: 20rpx;
+  }
+
+  .area-row {
+    display: flex;
+    flex-direction: row;
+    padding: 0 24rpx;
+  }
+
+  .area-btn {
+    display: flex;
+    align-items: center;
+    height: 64rpx;
+    padding: 0 32rpx;
+    margin-right: 16rpx;
+    background-color: #ffffff;
+    border-radius: 32rpx;
+    flex-shrink: 0;
+  }
+
+  .area-btn-label {
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .area-on {
+    background-color: #ff6a00;
+  }
+
+  .area-on-label {
+    font-size: 28rpx;
+    color: #ffffff;
+  }
+
+  /* 桌台卡片区 */
+  .table-scroll {
+    flex: 1;
+    min-height: 0;
+    margin-top: 20rpx;
+  }
+
+  .table-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 0 24rpx 40rpx;
+  }
+
+  .table-card {
+    width: 48%;
+    margin: 0 8rpx 24rpx;
+    border-radius: 20rpx;
+    padding: 28rpx;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card-idle {
+    background-color: #ffffff;
+  }
+
+  .card-occupied {
+    background-color: #fff4ec;
+  }
+
+  .table-name {
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .table-guests {
+    margin-top: 12rpx;
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .table-amount {
+    margin-top: 16rpx;
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .table-empty {
+    margin-top: 16rpx;
+    font-size: 30rpx;
+    color: #cccccc;
+  }
+
+  .table-duration {
+    margin-top: 10rpx;
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .empty {
+    padding: 120rpx 0;
+    text-align: center;
+  }
+
+  .empty-label {
+    font-size: 28rpx;
+    color: #bbbbbb;
+  }
+</style>

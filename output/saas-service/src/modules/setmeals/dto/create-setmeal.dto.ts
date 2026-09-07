@@ -23,7 +23,7 @@ export class SetmealGroupDishDto {
   @IsString()
   category?: string;
 
-  /** 价格（分） */
+  /** 价格（元） */
   @IsNumber()
   price: number;
 
@@ -71,8 +71,8 @@ export class CreateSetmealDto {
   @IsString()
   category?: string;
 
-  /** 价格（分） */
-  @IsInt()
+  /** 价格（元） */
+  @IsNumber()
   price: number;
 
   @IsArray()

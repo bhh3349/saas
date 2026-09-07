@@ -2,9 +2,12 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -44,6 +47,49 @@ export class UpdateDishDto {
   @IsOptional()
   @IsString()
   type?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  unit?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  serve_mode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  print_enable?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  print_dept?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  temp_price_change?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  manual_discount?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  min_amount?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  delta_amount?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  fractional?: boolean;
 
   @IsOptional()
   @Type(() => Number)

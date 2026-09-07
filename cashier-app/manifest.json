@@ -1,0 +1,53 @@
+{
+	"name": "收银",
+	"appid": "__UNI__539B9A9",
+	"description": "餐饮收银 App（uni-app x）",
+	"versionName": "1.0.0",
+	"versionCode": "100",
+	"transformPx": false,
+	"app-plus": {
+		"usingComponents": true,
+		"nvueStyleCompiler": "uni-app",
+		"compilerVersion": 3,
+		"splashscreen": {
+			"alwaysShowBeforeRender": true,
+			"waiting": true,
+			"autoclose": true,
+			"delay": 0
+		},
+		"modules": {},
+		"distribute": {
+			"android": {
+				"permissions": [
+					"<uses-permission android:name=\"android.permission.INTERNET\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_WIFI_STATE\"/>",
+					"<uses-permission android:name=\"android.permission.CHANGE_WIFI_STATE\"/>",
+					"<uses-permission android:name=\"android.permission.BLUETOOTH\"/>",
+					"<uses-permission android:name=\"android.permission.BLUETOOTH_ADMIN\"/>",
+					"<uses-permission android:name=\"android.permission.BLUETOOTH_CONNECT\"/>",
+					"<uses-permission android:name=\"android.permission.BLUETOOTH_SCAN\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_FINE_LOCATION\"/>",
+					"<uses-permission android:name=\"android.permission.ACCESS_COARSE_LOCATION\"/>"
+				]
+			},
+			"ios": {},
+			"sdkConfigs": {}
+		}
+	},
+	"quickapp": {},
+	"mp-weixin": {
+		"appid": "",
+		"setting": {
+			"urlCheck": false
+		},
+		"usingComponents": true
+	},
+	"vueVersion": "3",
+	"uni-app-x": {},
+	"web": {
+		"router": {
+			"mode": ""
+		}
+	}
+}

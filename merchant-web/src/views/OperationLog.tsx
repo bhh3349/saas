@@ -4,6 +4,8 @@ import { DatePicker } from 'antd';
 import { fetchSensitiveDetail, defaultRange, type SensitiveDetailRow } from '../api/reports';
 import Toast, { type ToastData } from '../components/Toast';
 import Pagination, { DEFAULT_PAGE_SIZE } from '../components/Pagination';
+import CommonSelect from '../components/CommonSelect';
+import { exportAoaToXlsx } from '../utils/excel';
 
 const ACTION_TEXT: Record<string, string> = {
   price_change: '改价',
@@ -11,7 +13,14 @@ const ACTION_TEXT: Record<string, string> = {
   void_order: '作废订单',
   free_order: '免单',
   voucher: '券核销',
+  reopen_order: '重新结账',
 };
+
+/** 操作类型筛选下拉（对齐敏感操作明细报表） */
+const ACTION_OPTIONS = [
+  { value: '', label: '全部类型' },
+  ...Object.entries(ACTION_TEXT).map(([value, label]) => ({ value, label })),
+];
 
 function formatTime(iso: string | null): string {
   if (!iso) return '—';
@@ -28,7 +37,8 @@ export default function OperationLog() {
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
   const [keyword, setKeyword] = useState('');
-  const [query, setQuery] = useState({ from: range.from, to: range.to, keyword: '' });
+  const [action, setAction] = useState('');
+  const [query, setQuery] = useState({ from: range.from, to: range.to, action: '', keyword: '' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [items, setItems] = useState<SensitiveDetailRow[]>([]);
@@ -44,6 +54,7 @@ export default function OperationLog() {
         to: query.to,
         page,
         page_size: pageSize,
+        action: query.action || undefined,
         keyword: query.keyword.trim() || undefined,
       });
       setItems(res.items);
@@ -66,7 +77,7 @@ export default function OperationLog() {
   }, [toast]);
 
   const handleQuery = () => {
-    setQuery({ from, to, keyword });
+    setQuery({ from, to, action, keyword });
     setPage(1);
   };
 
@@ -74,9 +85,46 @@ export default function OperationLog() {
     const r = defaultRange();
     setFrom(r.from);
     setTo(r.to);
+    setAction('');
     setKeyword('');
-    setQuery({ from: r.from, to: r.to, keyword: '' });
+    setQuery({ from: r.from, to: r.to, action: '', keyword: '' });
     setPage(1);
+  };
+
+  /** 导出当前筛选结果（按当前页全部条数上限分批取回） */
+  const handleExport = async () => {
+    try {
+      const res = await fetchSensitiveDetail({
+        from: query.from,
+        to: query.to,
+        page: 1,
+        page_size: 100,
+        action: query.action || undefined,
+        keyword: query.keyword.trim() || undefined,
+      });
+      if (res.items.length === 0) {
+        setToast({ type: 'info', text: '当前没有可导出的数据' });
+        return;
+      }
+      const header = ['序号', '时间', '操作人', '操作类型', '目标类型', '目标ID', '涉及金额(元)', '详情描述'];
+      const body = res.items.map((r, i) => [
+        String(i + 1),
+        formatTime(r.time),
+        r.operator,
+        ACTION_TEXT[r.action] ?? r.action_name ?? r.action,
+        r.target_type || '—',
+        r.target_id != null ? String(r.target_id) : '—',
+        r.amount ? r.amount.toFixed(2) : '—',
+        r.detail || '—',
+      ]);
+      await exportAoaToXlsx([header, ...body], {
+        sheetName: '操作日志',
+        filename: `操作日志_${query.from}_${query.to}.xlsx`,
+      });
+      setToast({ type: 'success', text: '导出成功' });
+    } catch (e) {
+      setToast({ type: 'error', text: (e as Error).message || '导出失败，请重试' });
+    }
   };
 
   return (
@@ -109,6 +157,14 @@ export default function OperationLog() {
               placeholder={['开始日期', '结束日期']}
               style={{ width: 260 }}
             />
+            <CommonSelect
+              value={action}
+              options={ACTION_OPTIONS}
+              onChange={setAction}
+              placeholder="全部类型"
+              width={150}
+              ariaLabel="操作类型筛选"
+            />
             <input
               type="text"
               className="ant-input"
@@ -125,6 +181,9 @@ export default function OperationLog() {
             </button>
             <button className="tm-btn tm-btn-default" type="button" onClick={handleReset}>
               重置
+            </button>
+            <button className="tm-btn tm-btn-default" type="button" onClick={handleExport}>
+              导出
             </button>
           </div>
 

@@ -1,0 +1,36 @@
+/**
+ * 支付方式接口
+ */
+import { request } from '../utils/request.uts'
+import { toInt } from '../utils/num.uts'
+
+export type PaymentMethod = {
+  id: number
+  name: string
+  /** 图标 emoji 或标识 */
+  icon: string
+  enabled: boolean
+  sort_order: number
+}
+
+/** 启用中的结账方式列表 */
+export async function fetchPayments(): Promise<PaymentMethod[]> {
+  const raw = await request<UTSJSONObject>({
+    url: '/payments',
+    method: 'GET',
+    raw: true,
+  })
+  const items = raw.getArray<UTSJSONObject>('data') ?? []
+  const payments: PaymentMethod[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    payments.push({
+      id: toInt((item['id'] ?? 0).toString()),
+      name: (item['name'] ?? '').toString(),
+      icon: (item['icon'] ?? '').toString(),
+      enabled: (item['enabled'] ?? false) == true,
+      sort_order: toInt((item['sort_order'] ?? 0).toString()),
+    } as PaymentMethod)
+  }
+  return payments
+}

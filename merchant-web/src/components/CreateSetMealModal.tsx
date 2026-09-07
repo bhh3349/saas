@@ -193,8 +193,8 @@ export default function CreateSetMealModal({ open, onClose }: CreateSetMealModal
         code: genCode(),
         name: name.trim(),
         category,
-        // 套餐价格按「分」提交
-        price: Math.round(p * 100),
+        // 套餐价格按「元」提交
+        price: p,
         groups: groups.map((g) => ({
           name: g.name.trim(),
           type: g.type,
@@ -203,8 +203,8 @@ export default function CreateSetMealModal({ open, onClose }: CreateSetMealModal
             id: Number(d.dishId),
             name: d.dishName,
             category: '',
-            // 分组内菜品价格按「分」提交（基础售价 + 加价）
-            price: Math.round((d.dishPrice + (d.priceChange || 0)) * 100),
+            // 分组内菜品价格按「元」提交（基础售价 + 加价）
+            price: d.dishPrice + (d.priceChange || 0),
             type: 'normal',
           })),
         })),

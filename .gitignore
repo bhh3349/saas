@@ -24,6 +24,23 @@ npm-debug.log*
 .codebuddy/
 .workbuddy/
 .playwright-cli/
+.opensquilla/
+.hbuilderx/
+
+# 自动化测试截图 / 设备日志
+captures/
+cashier-app/captures/
+
+# uni-app x 构建缓存
+cashier-app/unpackage/
+
+# 本地安装包 / 调试产物 / 凭证快照
+*.exe
+*.apk
+*.patch
+*.bak
+plat_login.json
+.opensquilla/
 
 # 操作系统
 .DS_Store

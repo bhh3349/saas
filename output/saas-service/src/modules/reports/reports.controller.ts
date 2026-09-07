@@ -138,7 +138,8 @@ export class ReportsController {
       query.to,
       query.page || 1,
       query.page_size || 20,
-      query.keyword, // 复用 keyword 字段作为操作类型筛选
+      query.action,
+      query.keyword,
     );
   }
 

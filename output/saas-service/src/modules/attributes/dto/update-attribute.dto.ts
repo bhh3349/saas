@@ -2,8 +2,8 @@ import { IsBoolean, IsIn, IsInt, IsOptional, IsString, MaxLength } from 'class-v
 
 export class UpdateAttributeDto {
   @IsOptional()
-  @IsIn(['spec', 'method', 'unit'])
-  kind?: 'spec' | 'method' | 'unit';
+  @IsIn(['spec', 'method', 'unit', 'topping', 'box', 'tag'])
+  kind?: 'spec' | 'method' | 'unit' | 'topping' | 'box' | 'tag';
 
   @IsOptional()
   @IsString()

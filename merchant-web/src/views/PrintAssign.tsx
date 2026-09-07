@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import SearchForm from '../components/SearchForm';
 import Toast, { type ToastData } from '../components/Toast';
 import Pagination, { DEFAULT_PAGE_SIZE } from '../components/Pagination';
-import { getBucket, putBucket } from '../api/buckets';
-import { listAllDishesApi } from '../api/dishes';
+import CommonSelect from '../components/CommonSelect';
+import { getBucket } from '../api/buckets';
+import { listAllDishesApi, updateDishApi } from '../api/dishes';
 
-/** 打印分配配置桶 key */
-const BUCKET_KEY = 'print';
+/** 档口配置桶 key */
+const BUCKET_KEY = 'stall';
 
 /** 打印分配菜品 */
 interface PrintDish {
@@ -67,27 +68,27 @@ export default function PrintAssign() {
     setCurrentPage(1);
   }, [activeCategory, search]);
 
-  /** 从云端加载：优先取已保存的分配数据，否则从菜品库同步 */
+  /** 从档口配置读取档口，从菜品记录读取当前出品档口 */
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const data = await getBucket<{ dishes: PrintDish[]; stations: Station[] }>(BUCKET_KEY);
+        const stalls = await getBucket<Array<{ kind?: string; name?: string }>>(BUCKET_KEY);
+        const stationList = (Array.isArray(stalls) ? stalls : [])
+          .filter((s) => s?.name && s.kind === 'kitchen')
+          .map((s) => ({ id: `stall-${s.name}`, name: String(s.name) }));
         if (!active) return;
-        if (data && Array.isArray(data.stations) && data.stations.length) setStations(data.stations);
-        if (data && Array.isArray(data.dishes) && data.dishes.length) {
-          setDishes(data.dishes);
-        } else {
-          setDishes(
-            (await listAllDishesApi()).map((d) => ({
-              id: String(d.id),
-              name: d.name,
-              category: d.category,
-              code: d.code ?? '',
-              station: '',
-            }))
-          );
-        }
+        setStations(stationList.length > 0 ? stationList : DEFAULT_STATIONS);
+        const dishList = await listAllDishesApi();
+        setDishes(
+          dishList.map((d) => ({
+            id: String(d.id),
+            name: d.name,
+            category: d.category,
+            code: d.code ?? '',
+            station: d.print_dept || '',
+          })),
+        );
       } catch {
         if (active) setDishes([]);
       } finally {
@@ -99,14 +100,14 @@ export default function PrintAssign() {
     };
   }, []);
 
-  /** 保存分配结果到云端 */
-  const persistDishes = async (next: PrintDish[]) => {
-    setDishes(next);
-    try {
-      await putBucket(BUCKET_KEY, { dishes: next, stations });
-    } catch (e) {
-      setToast({ type: 'error', text: (e as Error).message || '保存失败' });
-    }
+  /** 保存分配结果到菜品记录 */
+  const persistDishes = async (ids: string[], stationName: string) => {
+    await Promise.all(
+      ids.map((id) => updateDishApi(Number(id), { print_enable: true, print_dept: stationName })),
+    );
+    setDishes((prev) =>
+      prev.map((d) => (ids.includes(d.id) ? { ...d, station: stationName } : d)),
+    );
   };
 
   const isAllSelected = pageData.length > 0 && pageData.every((d) => selectedIds.includes(d.id));
@@ -147,17 +148,23 @@ export default function PrintAssign() {
       setToast({ type: 'warning', text: '请选择出品档口' });
       return;
     }
-    await persistDishes(
-      dishes.map((d) => (selectedIds.includes(d.id) ? { ...d, station: assignStation } : d))
-    );
-    setToast({ type: 'success', text: `已将 ${selectedIds.length} 个菜品分配至「${assignStation}」` });
-    setModalOpen(false);
-    setSelectedIds([]);
+    try {
+      await persistDishes(selectedIds, assignStation);
+      setToast({ type: 'success', text: `已将 ${selectedIds.length} 个菜品分配至「${assignStation}」` });
+      setModalOpen(false);
+      setSelectedIds([]);
+    } catch (e) {
+      setToast({ type: 'error', text: (e as Error).message || '保存失败' });
+    }
   };
 
   const handleSingleAssign = async (id: string, stationName: string) => {
-    await persistDishes(dishes.map((d) => (d.id === id ? { ...d, station: stationName } : d)));
-    setToast({ type: 'success', text: `已分配至「${stationName}」` });
+    try {
+      await persistDishes([id], stationName);
+      setToast({ type: 'success', text: `已分配至「${stationName}」` });
+    } catch (e) {
+      setToast({ type: 'error', text: (e as Error).message || '保存失败' });
+    }
   };
 
   /** 动态分类：全部 + 数据中出现的分类（保持出现顺序） */
@@ -286,17 +293,14 @@ export default function PrintAssign() {
                         <td>{d.code}</td>
                         <td>{d.station}</td>
                         <td className="td-center">
-                          <div className="link-group">
-                            {stations.map((s) => (
-                              <a
-                                key={s.id}
-                                className={`link ${d.station === s.name ? 'link-active' : ''}`}
-                                onClick={() => handleSingleAssign(d.id, s.name)}
-                              >
-                                {s.name}
-                              </a>
-                            ))}
-                          </div>
+                          <CommonSelect
+                            width={120}
+                            value={d.station}
+                            placeholder="请选择"
+                            options={stations.map((s) => ({ value: s.name, label: s.name }))}
+                            ariaLabel={`${d.name}出品档口`}
+                            onChange={(v) => handleSingleAssign(d.id, v)}
+                          />
                         </td>
                       </tr>
                     ))
@@ -338,19 +342,14 @@ export default function PrintAssign() {
               <div className="checkout-form-row">
                 <label>出品档口：</label>
                 <div className="checkout-form-control">
-                  <select
-                    className="ant-input"
-                    style={{ width: 200 }}
+                  <CommonSelect
+                    width={200}
                     value={assignStation}
-                    onChange={(e) => setAssignStation(e.target.value)}
-                  >
-                    <option value="">请选择</option>
-                    {stations.map((s) => (
-                      <option key={s.id} value={s.name}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="请选择"
+                    options={stations.map((s) => ({ value: s.name, label: s.name }))}
+                    ariaLabel="批量出品档口"
+                    onChange={setAssignStation}
+                  />
                 </div>
               </div>
             </div>

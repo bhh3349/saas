@@ -1,0 +1,16 @@
+/**
+ * 数字转换工具
+ * UTS 逻辑运算符只接受布尔操作数，字符串转数字的 NaN 兜底集中在这里处理
+ */
+
+/** 字符串转数字（NaN/空 → 0），适用于 id / 份数等整数字段 */
+export function toInt(s: string | null): number {
+  const n = parseInt(s ?? '')
+  return isNaN(n) ? 0 : n
+}
+
+/** 字符串转数字（NaN/空 → 0.0），适用于金额字段 */
+export function toNum(s: string | null): number {
+  const n = parseFloat(s ?? '')
+  return isNaN(n) ? 0 : n
+}

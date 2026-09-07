@@ -49,7 +49,7 @@ export default function SensitiveDetail() {
         to: query.to,
         page,
         page_size: pageSize,
-        keyword: query.action || undefined,
+        action: query.action || undefined,
       });
       setData(res);
     } catch (e) {

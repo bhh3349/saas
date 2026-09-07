@@ -1,0 +1,829 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-back" @click="goBack">
+          <text class="back-icon">←</text>
+        </view>
+        <text class="nav-title">{{ navTitle }}</text>
+        <view class="nav-right-placeholder"></view>
+      </view>
+    </view>
+
+    <!-- 搜索框 -->
+    <view class="search-bar">
+      <view class="search-box">
+        <text class="search-icon">🔍</text>
+        <input class="search-input" v-model="keyword" placeholder="搜索菜品名 / 助记码" confirm-type="search" />
+      </view>
+    </view>
+
+    <!-- 主体：左分类 + 右菜品 -->
+    <view class="main">
+      <!-- 左侧分类（搜索时隐藏） -->
+      <scroll-view v-if="!keyword" class="cate-scroll" scroll-y>
+        <view
+          v-for="c in categories"
+          :key="c"
+          class="cate-item"
+          :class="activeCategory == c ? 'cate-on' : ''"
+          @click="activeCategory = c"
+        >
+          <text class="cate-label" :class="activeCategory == c ? 'cate-on-label' : ''">{{ c }}</text>
+        </view>
+      </scroll-view>
+
+      <!-- 右侧菜品 -->
+      <scroll-view class="dish-scroll" scroll-y>
+        <view v-if="filteredDishes.length == 0" class="empty">
+          <text class="empty-label">暂无菜品</text>
+        </view>
+        <view
+          v-for="d in filteredDishes"
+          :key="d.id"
+          class="dish-row"
+          :class="{ 'dish-sold': d.sold_out }"
+        >
+          <view class="dish-info">
+            <view class="dish-name-row">
+              <text class="dish-name" :class="{ 'dish-name-gray': d.sold_out }">{{ d.name }}</text>
+              <text v-if="d.sold_out" class="sold-out-tag">沽清</text>
+            </view>
+              <text v-if="d.specs.length > 0" class="dish-spec">{{ specNames(d) }}</text>
+            <view class="dish-price-row">
+              <text class="dish-price" :class="{ 'dish-price-gray': d.sold_out }">¥{{ linePrice(d, -1).toFixed(2) }}</text>
+            </view>
+          </view>
+          <view class="dish-ops">
+            <view v-if="cartCount(d.id) == 0">
+              <view v-if="d.sold_out" class="btn-sold-disabled">
+                <text class="btn-sold-text">沽清</text>
+              </view>
+              <view v-else>
+                <view v-if="d.specs.length > 0" class="btn-choose" @click="addDishWithSpec(d)">
+                  <text class="btn-choose-text">选择</text>
+                </view>
+                <view v-else class="btn-plus" @click="addDish(d, 0)">
+                  <text class="btn-plus-text">+</text>
+                </view>
+              </view>
+            </view>
+            <view v-else>
+              <view class="btn-minus" @click="minusDish(d)">
+                <text class="btn-minus-text">−</text>
+              </view>
+              <text class="qty-num">{{ cartCount(d.id) }}</text>
+              <view
+                class="btn-plus"
+                :class="{ 'btn-plus-disabled': d.sold_out }"
+                @click="addDishCurrent(d)"
+              >
+                <text class="btn-plus-text">+</text>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="dish-bottom-space"></view>
+      </scroll-view>
+    </view>
+
+    <!-- 底部购物车栏 -->
+    <view v-if="!cartEmpty" class="cart-bar">
+      <view class="cart-left" @click="showCartDetail">
+        <view class="cart-icon-wrap">
+          <text class="cart-icon">🛒</text>
+          <view class="cart-badge">
+            <text class="cart-badge-text">{{ totalCount }}</text>
+          </view>
+        </view>
+        <view class="cart-amount-wrap">
+          <text class="cart-total">¥{{ totalAmount.toFixed(2) }}</text>
+          <text class="cart-count-label">已点 {{ totalCount }} 个菜品</text>
+        </view>
+      </view>
+      <view class="cart-right" @click="goCart">
+        <text class="cart-go-text">去购物车</text>
+      </view>
+    </view>
+    <view v-else class="cart-bar cart-bar-empty">
+      <text class="cart-bar-hint">请先点菜</text>
+    </view>
+
+    <!-- 规格选择弹窗 -->
+    <view v-if="specPickerShow" class="modal-mask" @click="specPickerShow = false">
+      <view class="modal-content" @click.stop="">
+        <text class="modal-title">{{ specPickerDish ? specPickerDish.name : '' }}</text>
+        <text class="modal-sub">请选择规格</text>
+        <view class="spec-list">
+          <view
+            v-for="(s, i) in specPickerDish ? specPickerDish.specs : []"
+            :key="i"
+            class="spec-item"
+            @click="confirmSpec(i)"
+          >
+            <text class="spec-name">{{ s.name }}</text>
+            <text class="spec-price">¥{{ (specPickerDish!.price + s.price_delta).toFixed(2) }}</text>
+          </view>
+        </view>
+        <view class="modal-close" @click="specPickerShow = false">
+          <text class="modal-close-text">取消</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { fetchMenu, type DishItem } from '../../api/dishes.uts'
+  import { toInt } from '../../utils/num.uts'
+
+  /** 购物车条目 */
+  type CartEntry = {
+    key: string
+    qty: number
+  }
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        tableId: 0,
+        tableName: '',
+        orderId: 0,
+        guests: 0,
+        keyword: '',
+        dishes: [] as DishItem[],
+        categories: [] as string[],
+        activeCategory: '',
+        cart: [] as CartEntry[],
+        specPickerShow: false,
+        specPickerDish: null as DishItem | null
+      }
+    },
+    computed: {
+      navTitle(): string {
+        if (this.tableId > 0) {
+          return this.tableName + (this.guests > 0 ? ' (' + this.guests + '人)' : '')
+        }
+        return '点餐'
+      },
+      filteredDishes(): DishItem[] {
+        const kw = this.keyword.trim().toLowerCase()
+        let list = this.dishes
+        if (this.activeCategory) {
+          list = list.filter((d: DishItem) => d.category == this.activeCategory)
+        }
+        if (kw) {
+          list = list.filter((d: DishItem) => {
+            const code = d.code ?? ''
+            return d.name.toLowerCase().includes(kw) || (code.length > 0 && code.toLowerCase().includes(kw))
+          })
+        }
+        return list
+      },
+      cartEmpty(): boolean {
+        return this.totalCount == 0
+      },
+      totalCount(): number {
+        let n = 0
+        for (let i = 0; i < this.cart.length; i++) {
+          n += this.cart[i].qty
+        }
+        return n
+      },
+      totalAmount(): number {
+        let amt = 0
+        for (let i = 0; i < this.cart.length; i++) {
+          const entry = this.cart[i]
+          const idx = entry.key.indexOf('_')
+          const dishId = toInt(entry.key.substring(0, idx))
+          const specIdx = toInt(entry.key.substring(idx + 1))
+          const dish = this.findDish(dishId)
+          if (dish != null) {
+            amt += this.linePrice(dish, specIdx) * entry.qty
+          }
+        }
+        return amt
+      }
+    },
+    onLoad(options: OnLoadOptions) {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+      const tidRaw = parseFloat(options['table_id'] ?? '')
+      this.tableId = isNaN(tidRaw) ? 0 : tidRaw
+      this.tableName = options['table_name'] ?? ''
+      const oidRaw = parseFloat(options['order_id'] ?? '')
+      this.orderId = isNaN(oidRaw) ? 0 : oidRaw
+      const gRaw = parseFloat(options['guests'] ?? '')
+      this.guests = isNaN(gRaw) ? 0 : gRaw
+      const saved = uni.getStorageSync('cashier_cart')
+      if (saved && typeof saved == 'object') {
+        const savedItems = saved as Array<UTSJSONObject>
+        for (let i = 0; i < savedItems.length; i++) {
+          const item = savedItems[i]
+          this.cart.push({
+            key: (item['key'] ?? '').toString(),
+            qty: toInt((item['qty'] ?? 0).toString()),
+          } as CartEntry)
+        }
+      }
+    },
+    onShow() {
+      this.load()
+    },
+    onHide() {
+      this.persistCart()
+    },
+    methods: {
+      async load() {
+        try {
+          const list = await fetchMenu()
+          const sorted = list.sort((a: DishItem, b: DishItem) => {
+          if (a.sort_order != b.sort_order) return a.sort_order - b.sort_order
+            return a.id - b.id
+          })
+          this.dishes = sorted
+          const seen: string[] = []
+          const cats: string[] = []
+          for (let i = 0; i < sorted.length; i++) {
+            const c = sorted[i].category ?? ''
+            if (!seen.includes(c)) {
+              seen.push(c)
+              cats.push(c)
+            }
+          }
+          this.categories = cats
+          if (!this.categories.includes(this.activeCategory)) {
+            this.activeCategory = this.categories.length > 0 ? this.categories[0] : ''
+          }
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        }
+      },
+      getCartQty(dishId: number): number {
+        const prefix = dishId.toString() + '_'
+        let n = 0
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key.startsWith(prefix)) {
+            n += this.cart[i].qty
+          }
+        }
+        return n
+      },
+      currentSpecIndex(dishId: number): number {
+        const prefix = dishId.toString() + '_'
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key.startsWith(prefix)) {
+            const idx = this.cart[i].key.indexOf('_')
+            return toInt(this.cart[i].key.substring(idx + 1))
+          }
+        }
+        return 0
+      },
+      persistCart() {
+        uni.setStorageSync('cashier_cart', this.cart)
+      },
+      findDish(id: number): DishItem | null {
+        for (let i = 0; i < this.dishes.length; i++) {
+          if (this.dishes[i].id == id) return this.dishes[i]
+        }
+        return null
+      },
+      linePrice(d: DishItem, specIndex: number): number {
+        if (specIndex >= 0 && specIndex < d.specs.length) {
+          return d.price + d.specs[specIndex].price_delta
+        }
+        return d.price
+      },
+      goBack() {
+        this.persistCart()
+        uni.navigateBack()
+      },
+      cartCount(dishId: number): number {
+        return this.getCartQty(dishId)
+      },
+      addDishWithSpec(d: DishItem) {
+        this.specPickerDish = d
+        this.specPickerShow = true
+      },
+      addDishCurrent(d: DishItem) {
+        this.addDish(d, this.currentSpecIndex(d.id))
+      },
+      confirmSpec(specIndex: number) {
+        if (this.specPickerDish != null) {
+          this.addDish(this.specPickerDish!, specIndex)
+        }
+        this.specPickerShow = false
+      },
+      addDish(d: DishItem, specIndex: number) {
+        if (d.sold_out) {
+          uni.showToast({ title: d.name + ' 已沽清', icon: 'none' })
+          return
+        }
+        const key = d.id.toString() + '_' + specIndex.toString()
+        let found = false
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key == key) {
+            this.cart[i].qty++
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          this.cart.push({ key: key, qty: 1 })
+        }
+        this.persistCart()
+      },
+      minusDish(d: DishItem) {
+        const prefix = d.id.toString() + '_'
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key.startsWith(prefix)) {
+            this.cart[i].qty--
+            if (this.cart[i].qty <= 0) {
+              this.cart.splice(i, 1)
+            }
+            break
+          }
+        }
+        this.persistCart()
+      },
+      specNames(d: DishItem): string {
+        const names: string[] = []
+        for (let i = 0; i < d.specs.length; i++) {
+          names.push(d.specs[i].name)
+        }
+        return names.join(' / ')
+      },
+      goCart() {
+        this.persistCart()
+        let url = '/pages/cart/index'
+        const qs: string[] = []
+        if (this.tableId > 0) qs.push('table_id=' + this.tableId.toString())
+        if (this.tableName) qs.push('table_name=' + this.tableName)
+        if (this.orderId > 0) qs.push('order_id=' + this.orderId.toString())
+        if (this.guests > 0) qs.push('guests=' + this.guests.toString())
+        if (qs.length > 0) url += '?' + qs.join('&')
+        uni.navigateTo({ url: url })
+      },
+      showCartDetail() {
+        this.goCart()
+      }
+    }
+  }
+</script>
+
+<style>
+  .page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f6f8;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .nav-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 88rpx;
+    padding: 0 24rpx;
+  }
+
+  .nav-back {
+    width: 80rpx;
+    height: 60rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .back-icon {
+    font-size: 44rpx;
+    color: #ffffff;
+  }
+
+  .nav-title {
+    flex: 1;
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+  }
+
+  .nav-guests {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 28rpx;
+    padding: 8rpx 20rpx;
+  }
+
+  .guests-label {
+    font-size: 24rpx;
+    color: rgba(255, 255, 255, 0.9);
+    margin-right: 6rpx;
+  }
+
+  .guests-num {
+    font-size: 26rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+
+  /* 搜索框 */
+  .search-bar {
+    padding: 20rpx 24rpx 0;
+  }
+
+  .search-box {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    height: 72rpx;
+    padding: 0 24rpx;
+  }
+
+  .search-icon {
+    font-size: 28rpx;
+    margin-right: 12rpx;
+  }
+
+  .search-input {
+    flex: 1;
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  /* 主体 */
+  .main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: row;
+    margin-top: 20rpx;
+  }
+
+  .cate-scroll {
+    width: 180rpx;
+    background-color: #f0f1f3;
+  }
+
+  .cate-item {
+    padding: 28rpx 16rpx;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #e4e4e6;
+  }
+
+  .cate-on {
+    background-color: #ffffff;
+    border-left-width: 6rpx;
+    border-left-style: solid;
+    border-left-color: #ff6a00;
+  }
+
+  .cate-label {
+    font-size: 26rpx;
+    color: #555555;
+    text-align: center;
+  }
+
+  .cate-on-label {
+    font-size: 26rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .dish-scroll {
+    flex: 1;
+    background-color: #ffffff;
+  }
+
+  .dish-row {
+    display: flex;
+    flex-direction: row;
+    padding: 24rpx;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+    align-items: center;
+  }
+
+  .dish-sold {
+    opacity: 0.6;
+  }
+
+  .dish-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dish-name-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .dish-name {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .dish-name-gray {
+    color: #999999;
+  }
+
+  .sold-out-tag {
+    margin-left: 12rpx;
+    font-size: 20rpx;
+    color: #ffffff;
+    background-color: #cccccc;
+    padding: 2rpx 10rpx;
+    border-radius: 4rpx;
+  }
+
+  .dish-spec {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  .dish-price-row {
+    margin-top: 12rpx;
+  }
+
+  .dish-price {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .dish-price-gray {
+    color: #cccccc;
+  }
+
+  .dish-ops {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .btn-sold-disabled {
+    padding: 10rpx 24rpx;
+    border-radius: 30rpx;
+    background-color: #e8e8e8;
+  }
+
+  .btn-sold-text {
+    font-size: 24rpx;
+    color: #cccccc;
+  }
+
+  .btn-plus {
+    width: 56rpx;
+    height: 56rpx;
+    border-radius: 50%;
+    background-color: #ff6a00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-plus-text {
+    font-size: 36rpx;
+    color: #ffffff;
+    font-weight: bold;
+    margin-top: -4rpx;
+  }
+
+  .btn-plus-disabled {
+    background-color: #cccccc;
+  }
+
+  .btn-minus {
+    width: 48rpx;
+    height: 48rpx;
+    border-radius: 50%;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: #cccccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 12rpx;
+  }
+
+  .btn-minus-text {
+    font-size: 30rpx;
+    color: #999999;
+    margin-top: -4rpx;
+  }
+
+  .btn-choose {
+    padding: 10rpx 28rpx;
+    border-radius: 30rpx;
+    background-color: #ff6a00;
+  }
+
+  .btn-choose-text {
+    font-size: 26rpx;
+    color: #ffffff;
+  }
+
+  .qty-num {
+    min-width: 48rpx;
+    text-align: center;
+    font-size: 30rpx;
+    color: #333333;
+    margin-right: 12rpx;
+    margin-left: 12rpx;
+  }
+
+  .dish-bottom-space {
+    height: 160rpx;
+  }
+
+  .empty {
+    padding: 120rpx 0;
+    text-align: center;
+  }
+
+  .empty-label {
+    font-size: 28rpx;
+    color: #bbbbbb;
+  }
+
+  /* 底部购物车栏 */
+  .cart-bar {
+    height: 110rpx;
+    background-color: #333333;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 24rpx;
+  }
+
+  .cart-bar-empty {
+    justify-content: center;
+  }
+
+  .cart-bar-hint {
+    font-size: 26rpx;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .cart-left {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cart-icon-wrap {
+    position: relative;
+    width: 80rpx;
+    height: 80rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 16rpx;
+  }
+
+  .cart-icon {
+    font-size: 56rpx;
+  }
+
+  .cart-badge {
+    position: absolute;
+    top: -6rpx;
+    right: -6rpx;
+    min-width: 32rpx;
+    height: 32rpx;
+    border-radius: 16rpx;
+    background-color: #ff6a00;
+    padding: 0 8rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .cart-badge-text {
+    font-size: 20rpx;
+    color: #ffffff;
+  }
+
+  .cart-amount-wrap {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cart-total {
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+  }
+
+  .cart-count-label {
+    font-size: 22rpx;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .cart-right {
+    height: 80rpx;
+    padding: 0 40rpx;
+    background-color: #ff6a00;
+    border-radius: 40rpx;
+    display: flex;
+    align-items: center;
+  }
+
+  .cart-go-text {
+    font-size: 28rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+
+  /* 规格弹窗 */
+  .modal-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-content {
+    width: 600rpx;
+    background-color: #ffffff;
+    border-radius: 24rpx;
+    padding: 40rpx;
+  }
+
+  .modal-title {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #333333;
+    text-align: center;
+  }
+
+  .modal-sub {
+    font-size: 24rpx;
+    color: #999999;
+    text-align: center;
+    margin-top: 8rpx;
+  }
+
+  .spec-list {
+    margin-top: 32rpx;
+  }
+
+  .spec-item {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+  }
+
+  .spec-name {
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .spec-price {
+    font-size: 28rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .modal-close {
+    margin-top: 32rpx;
+    padding: 24rpx;
+    background-color: #f5f5f5;
+    border-radius: 12rpx;
+    text-align: center;
+  }
+
+  .modal-close-text {
+    font-size: 28rpx;
+    color: #666666;
+  }
+</style>

@@ -338,18 +338,22 @@ button {
   flex-direction: column;
   gap: 20px;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .page-head {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 32px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 20px;
+  height: auto;
 }
 
 .page-title {
+  margin: 0;
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
@@ -364,12 +368,20 @@ button {
   text-overflow: ellipsis;
 }
 
-/* page-head 右侧操作区（刷新按钮 + 日期徽章） */
+/* page-head 右上角固定区（星标 / 刷新+日期 / 提示文字），不随功能按钮换行 */
 .page-head-right {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
+}
+/* page-head 内功能按钮行：标题之下的操作按钮 */
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .goods-list-action-bar {
   display: flex;
@@ -1502,6 +1514,27 @@ button {
   height: 20px;
   color: #fff;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+
+/* 收藏区空态：添加快捷页引导 */
+.quick-item.quick-add {
+  cursor: default;
+}
+.quick-item.quick-add:hover {
+  background: transparent;
+}
+.quick-tile.add {
+  border: 1px dashed var(--color-ink-muted);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-ink-muted);
+  opacity: 0.7;
+}
+.quick-tile.add .icon {
+  width: 18px;
+  height: 18px;
 }
 
 /* ---------------- 页面收藏星标 ---------------- */
@@ -5203,7 +5236,8 @@ button.page-num:hover:not(.active) {
 .print-assign-body {
   display: flex;
   gap: 16px;
-  height: calc(100% - 60px);
+  flex: 1;
+  min-height: 0;
 }
 .category-sidebar {
   width: 170px;
@@ -5378,7 +5412,7 @@ body {
   gap: 22px;
 }
 .page-head {
-  height: 46px;
+  min-height: 46px;
 }
 .page-title {
   position: static;
@@ -6962,7 +6996,9 @@ button.page-num:hover:not(.active) {
 .print-style-body {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 /* 左侧：小票类型导航 */
 .print-style-ticket-nav {
@@ -6971,7 +7007,7 @@ button.page-num:hover:not(.active) {
   background: var(--color-surface);
   border: 1px solid var(--color-hairline);
   border-radius: 8px;
-  max-height: calc(100vh - 140px);
+  min-height: 0;
   overflow-y: auto;
 }
 .print-style-ticket-group {
@@ -6994,6 +7030,10 @@ button.page-num:hover:not(.active) {
   flex-direction: column;
 }
 .print-style-ticket-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 14px;
   background: transparent;
   border: none;
@@ -7014,9 +7054,20 @@ button.page-num:hover:not(.active) {
   border-left-color: var(--color-primary);
   font-weight: 600;
 }
+.print-style-ticket-badge {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1;
+}
 .print-style-form-panel {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 .print-style-preview-panel {
   width: 360px;
@@ -7413,8 +7464,6 @@ button.page-num:hover:not(.active) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
-  flex: none;
 }
 .page-head-actions .tm-btn {
   height: 30px;

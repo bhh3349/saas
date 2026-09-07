@@ -1,0 +1,44 @@
+<script>
+  import { sendHeartbeat } from './api/devices.uts'
+
+  /** 心跳周期（毫秒）：60s 一次，后端按「超过 5 分钟无心跳 = 离线」判断 */
+  const HEARTBEAT_INTERVAL = 60 * 1000
+
+  /** 心跳定时器（App 级单例，onShow 启动 / onHide 停止） */
+  let heartbeatTimer = -1
+
+  function startHeartbeat() {
+    sendHeartbeat()
+    if (heartbeatTimer >= 0) {
+      return
+    }
+    heartbeatTimer = setInterval(() => {
+      sendHeartbeat()
+    }, HEARTBEAT_INTERVAL)
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer >= 0) {
+      clearInterval(heartbeatTimer)
+      heartbeatTimer = -1
+    }
+  }
+
+  export default {
+    onLaunch: function () {
+      console.log('App Launch')
+    },
+    onShow: function () {
+      console.log('App Show')
+      startHeartbeat()
+    },
+    onHide: function () {
+      console.log('App Hide')
+      stopHeartbeat()
+    }
+  }
+</script>
+
+<style>
+  /* uvue 不支持 page 选择器，全局背景由各页面根 view 自行设置 */
+</style>

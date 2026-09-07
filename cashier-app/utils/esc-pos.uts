@@ -1,0 +1,315 @@
+/**
+ * ESC/POS 小票格式化工具
+ *
+ * 生成热敏打印机标准 ESC 指令序列（Uint8Array）。
+ * 核心指令参考 ESC/POS 标准（EPSON）和兼容厂商（芯烨、飞鹅、佳博等）。
+ *
+ * 注意：
+ * - 此工具**只负责指令生成**，不负责连接/发送。
+ *   连接和发送需要 Phase 2 的原生蓝牙 / TCP 插件。
+ * - 中文字符编码按 GB18030 / GBK 处理（热敏打印机通常支持）。
+ * - 行宽按 `widthMM` 和每毫米字符数估算：
+ *   58mm ≈ 32 列，80mm ≈ 48 列。
+ */
+
+import { defaultReceiptStyle, type ReceiptStyle } from '../api/receipt-style.uts'
+
+/** 基本 ESC 指令 */
+const ESC = 0x1b
+const GS = 0x1d
+const DCS = 0x90 // 仅某些新机型
+
+/** 行宽估算：不同纸宽对应的列数（ASCII 字符） */
+function colsFor(widthMM: number): number {
+  // 8点字体：每毫米 ~ 1 个 ASCII 字符
+  if (widthMM >= 80) return 48
+  if (widthMM >= 58) return 32
+  return 24 // 110mm 暂不细分
+}
+
+/** 写入单字节 */
+function write(buf: number[], ...bs: number[]) {
+  for (let i = 0; i < bs.length; i++) buf.push(bs[i])
+}
+
+/** 写入 ASCII 字符串（单字节） */
+function writeAscii(buf: number[], s: string) {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c < 0x80) buf.push(c)
+    // 非 ASCII 字符跳过（中文另行处理）
+  }
+}
+
+/** 简单 ASCII 转 GBK 占位实现 — Phase 2 里替换为真实编码库 */
+function writeText(buf: number[], s: string) {
+  // 临时：先把可打印 ASCII 写上
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i)
+    if (c == null) { continue }
+    if (c >= 0x20 && c < 0x7f) buf.push(c)
+    else if (c >= 0x4e00 && c <= 0x9fff) {
+      // 中文占位：打 ?? 代替，等 Phase 2 编码库
+      buf.push(0x3f); buf.push(0x3f)
+    } else if (c === 0x09) {
+      // tab -> space
+      buf.push(0x20)
+    }
+  }
+}
+
+/** ==================== 指令集合 ==================== */
+
+/** 初始化打印机 */
+function init(buf: number[]) {
+  write(buf, ESC, 0x40)
+}
+
+/** 走纸 n 行 */
+function feed(buf: number[], n: number = 1) {
+  write(buf, ESC, 0x64, n)
+}
+
+/** 切纸（部分机型支持） */
+function cut(buf: number[]) {
+  write(buf, GS, 0x56, 0x01)
+}
+
+/** 设置对齐：0=左 1=中 2=右 */
+function align(buf: number[], n: number) {
+  write(buf, ESC, 0x61, n)
+}
+
+/** 字符放大：宽高各 1-8 倍 */
+function size(buf: number[], w: number, h: number) {
+  const ww = Math.max(1, Math.min(8, w)) - 1
+  const hh = Math.max(1, Math.min(8, h)) - 1
+  write(buf, GS, 0x21, (ww << 4) | hh)
+}
+
+/** 加粗开关 */
+function bold(buf: number[], on: boolean) {
+  write(buf, ESC, 0x45, on ? 0x01 : 0x00)
+}
+
+/** ==================== 格式化工具 ==================== */
+
+/**
+ * 按列数把 "左金额右数量" 一行对齐。
+ * 例：cols=48, left="宫保鸡丁", right="x2   ¥38.00" → 中间补空格
+ */
+function padRow(cols: number, left: string, right: string): string {
+  // 粗略按字符数估算（中文按 2 列，ASCII 按 1 列）
+  function widthOf(s: string): number {
+    let w = 0
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i)
+      if (c == null) { continue }
+      w += c > 0x7f ? 2 : 1
+    }
+    return w
+  }
+  const lw = widthOf(left)
+  const rw = widthOf(right)
+  const gap = cols - lw - rw
+  if (gap <= 0) return left + ' ' + right
+  let sp = ''
+  for (let i = 0; i < gap; i++) sp += ' '
+  return left + sp + right
+}
+
+function hr(buf: number[], cols: number) {
+  let line = ''
+  for (let i = 0; i < cols; i++) line += '-'
+  writeText(buf, line)
+  feed(buf, 1)
+}
+
+/** ==================== 小票主体 ==================== */
+
+export type ReceiptItem = {
+  name: string
+  qty: number
+  price: number
+  subtotal?: number
+  spec?: string
+  remark?: string
+}
+
+export type ReceiptData = {
+  shopName: string
+  orderNo: string
+  tableNo?: string
+  guests?: number
+  createTime: string
+  settleTime?: string
+  items: ReceiptItem[]
+  totalAmount: number
+  paidAmount?: number
+  discountAmount?: number
+  paymentMethod?: string
+  remark?: string
+}
+
+/** 字号 → 标题放大倍数（small 2x / medium 2x / large 3x） */
+function titleSizeFor(fontSize: string): number {
+  if (fontSize == 'large') {
+    return 3
+  }
+  return 2
+}
+
+/** 字号 → 正文放大倍数（small 1x / medium 2x / large 3x） */
+function bodySizeFor(fontSize: string): number {
+  if (fontSize == 'large') {
+    return 3
+  }
+  if (fontSize == 'small') {
+    return 1
+  }
+  return 2
+}
+
+/**
+ * 生成小票字节流
+ * @param style 票据样式（商家后台「票据样式-结账单」配置）；null 走默认样式
+ */
+export function buildReceipt(data: ReceiptData, widthMM: number = 80, style: ReceiptStyle | null = null): Uint8Array {
+  const buf: number[] = []
+  const cols = colsFor(widthMM)
+  const st = style ?? defaultReceiptStyle()
+  const titleSize = titleSizeFor(st.fontSize)
+  const bodySize = bodySizeFor(st.fontSize)
+
+  // 初始化
+  init(buf)
+
+  // === 头部 ===
+  align(buf, 1) // 居中
+  size(buf, bodySize, bodySize)
+  if (st.headerText.length > 0) {
+    writeText(buf, st.headerText)
+    feed(buf, 1)
+  }
+  if (st.sections.storeName) {
+    size(buf, titleSize, titleSize)
+    writeText(buf, data.shopName)
+    feed(buf, 1)
+  }
+  size(buf, 1, 1)
+  align(buf, 0) // 左对齐
+  feed(buf, 1)
+
+  // === 订单信息 ===
+  hr(buf, cols)
+  if (st.sections.orderNumber) {
+    writeText(buf, '订单号: ' + data.orderNo)
+    feed(buf, 1)
+  }
+  if (st.sections.tableNumber && data.tableNo) {
+    writeText(buf, '桌  台: ' + data.tableNo)
+    feed(buf, 1)
+  }
+  if (st.sections.tableNumber && data.guests) {
+    writeText(buf, '人  数: ' + (data.guests ?? 0).toString())
+    feed(buf, 1)
+  }
+  if (st.sections.orderTime) {
+    writeText(buf, '开单: ' + data.createTime)
+    feed(buf, 1)
+    if (data.settleTime) {
+      writeText(buf, '结账: ' + data.settleTime)
+      feed(buf, 1)
+    }
+  }
+  hr(buf, cols)
+
+  // === 菜品列表 ===
+  if (st.sections.itemsDetail) {
+    bold(buf, true)
+    writeText(buf, padRow(cols, '菜品', '数量  小计'))
+    bold(buf, false)
+    feed(buf, 1)
+
+    for (let i = 0; i < data.items.length; i++) {
+      const it = data.items[i]
+      const sub = it.subtotal != null ? it.subtotal : it.qty * it.price
+      const row = padRow(cols, it.name, 'x' + it.qty.toString() + '   ¥' + sub.toFixed(2))
+      writeText(buf, row)
+      feed(buf, 1)
+      if (it.spec) {
+        writeText(buf, '  (' + it.spec + ')')
+        feed(buf, 1)
+      }
+      if (it.remark) {
+        writeText(buf, '  备注: ' + it.remark)
+        feed(buf, 1)
+      }
+    }
+
+    hr(buf, cols)
+  }
+
+  // === 金额汇总 ===
+  if (st.sections.totalAmount) {
+    writeText(buf, padRow(cols, '合  计', '¥' + data.totalAmount.toFixed(2)))
+    feed(buf, 1)
+  }
+  if (st.sections.discountAmount && data.discountAmount != null && data.discountAmount > 0) {
+    writeText(buf, padRow(cols, '优  惠', '-¥' + data.discountAmount.toFixed(2)))
+    feed(buf, 1)
+  }
+  if (data.paidAmount != null && data.paidAmount !== data.totalAmount) {
+    writeText(buf, padRow(cols, '实  收', '¥' + data.paidAmount.toFixed(2)))
+    feed(buf, 1)
+  }
+  if (st.sections.changeAmount && data.paidAmount != null && data.paidAmount > data.totalAmount) {
+    writeText(buf, padRow(cols, '找  零', '¥' + (data.paidAmount - data.totalAmount).toFixed(2)))
+    feed(buf, 1)
+  }
+  if (st.sections.paymentMethod && data.paymentMethod) {
+    writeText(buf, padRow(cols, '支付方式', data.paymentMethod))
+    feed(buf, 1)
+  }
+
+  // === 备注 ===
+  if (data.remark) {
+    hr(buf, cols)
+    writeText(buf, '备注: ' + data.remark)
+    feed(buf, 1)
+  }
+
+  // === 尾部 ===
+  if (st.footerText.length > 0) {
+    feed(buf, 2)
+    align(buf, 1)
+    writeText(buf, st.footerText)
+    feed(buf, 2)
+  }
+  cut(buf)
+
+  return new Uint8Array(buf)
+}
+
+/** 生成测试小票 */
+export function buildTestReceipt(shopName: string, widthMM: number = 80): Uint8Array {
+  return buildReceipt(
+    {
+      shopName,
+      orderNo: 'TEST-' + Date.now().toString().slice(-8),
+      tableNo: '测试桌',
+      guests: 2,
+      createTime: new Date().toLocaleString(),
+      settleTime: new Date().toLocaleString(),
+      items: [
+        { name: '宫保鸡丁', qty: 1, price: 38.0 },
+        { name: '鱼香肉丝', qty: 1, price: 32.0 },
+        { name: '米饭', qty: 2, price: 3.0, spec: '大碗' },
+      ],
+      totalAmount: 76.0,
+      paidAmount: 76.0,
+      paymentMethod: '现金',
+    },
+    widthMM,
+  )
+}

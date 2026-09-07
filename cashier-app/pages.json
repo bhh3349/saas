@@ -1,0 +1,85 @@
+﻿{
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录"
+      }
+    },
+    {
+      "path": "pages/register/index",
+      "style": {
+        "navigationBarTitleText": "注册店铺"
+      }
+    },
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "收银工作台",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/tables/index",
+      "style": {
+        "navigationBarTitleText": "桌台点餐",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/order/index",
+      "style": {
+        "navigationBarTitleText": "点餐",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/cart/index",
+      "style": {
+        "navigationBarTitleText": "购物车",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/order-detail/index",
+      "style": {
+        "navigationBarTitleText": "订单详情",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/settle/index",
+      "style": {
+        "navigationBarTitleText": "结账",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/orders/index",
+      "style": {
+        "navigationBarTitleText": "订单管理",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/print/index",
+      "style": {
+        "navigationBarTitleText": "打印管理",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/print/add",
+      "style": {
+        "navigationBarTitleText": "添加打印机",
+        "navigationStyle": "custom"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "收银",
+    "navigationBarBackgroundColor": "#FF6A00",
+    "backgroundColor": "#F5F6F8"
+  }
+}

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 
 /** 日期范围查询（YYYY-MM-DD，可缺省；缺省 = 今日） */
 export class DateRangeDto {
@@ -42,6 +42,12 @@ export class ListReportPageDto extends DateRangeDto {
   @IsOptional()
   @IsString()
   keyword?: string;
+
+  /** 敏感操作类型（sensitive-detail 专用） */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  action?: string;
 }
 
 export class ListReportOrdersDto extends DateRangeDto {

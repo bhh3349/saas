@@ -103,13 +103,6 @@ interface PrintStyleConfig {
   operator?: string;
 }
 
-/** 默认 sections（全开） */
-const ALL_SECTIONS_ON = (): Record<SectionKey, boolean> =>
-  SECTION_DEFS.reduce<Record<SectionKey, boolean>>((acc, d) => {
-    acc[d.key] = true;
-    return acc;
-  }, {} as Record<SectionKey, boolean>);
-
 /** 按分组生成默认配置 */
 const defaultConfig = (group: TicketGroup): PrintStyleConfig => ({
   paperWidth: '80',
@@ -298,7 +291,8 @@ export default function PrintStyle() {
                     className={`print-style-ticket-item${selected === t ? ' active' : ''}`}
                     onClick={() => setSelected(t)}
                   >
-                    {t}
+                    <span>{t}</span>
+                    {configs[t].updatedAt && <span className="print-style-ticket-badge">使用中</span>}
                   </button>
                 ))}
               </div>

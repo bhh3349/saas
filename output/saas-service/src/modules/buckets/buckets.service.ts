@@ -22,6 +22,8 @@ const ALLOWED_KEYS = new Set([
   'business_settings',
   'staff',
   'payments',
+  'print-style',
+  'print-business',
 ]);
 
 @Injectable()

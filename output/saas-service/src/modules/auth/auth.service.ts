@@ -26,6 +26,10 @@ export interface LoginResult {
     status: string;
     /** 店铺名称（登录时随响应下发，供后台 TopBar 展示） */
     shopName?: string;
+    /** 门店地址（注册时填写，门店档案只读展示） */
+    shopAddress?: string;
+    /** 开业日期（建店时间，门店档案只读展示，YYYY-MM-DD） */
+    shopCreatedAt?: string;
   };
 }
 
@@ -77,6 +81,8 @@ export class AuthService {
             password_hash: passwordHash,
             name: dto.name || '老板',
             role: UserRole.Boss,
+            // 激活码注册的主管理员：唯一、默认最高权限、不展示在员工档案中
+            is_primary: true,
             status: UserStatus.Active,
           }),
         );
@@ -86,6 +92,7 @@ export class AuthService {
           manager.getRepository(Shop).create({
             shop_id: claim.shopId,
             name: dto.shop_name,
+            address: dto.shop_address || '',
             status: ShopStatus.Active,
           }),
         );
@@ -172,20 +179,12 @@ export class AuthService {
       phone: user.phone,
     });
 
-    // 下发店铺名称，供后台 TopBar 展示真实店名
+    // 下发真实店铺档案，供后台 TopBar / 门店档案页展示
     const shop = await this.shopRepo.findOne({ where: { shop_id: user.shop_id } });
 
     return {
       token,
-      user: {
-        id: user.id,
-        shop_id: user.shop_id,
-        phone: user.phone,
-        name: user.name,
-        role: user.role,
-        status: user.status,
-        shopName: shop?.name ?? '',
-      },
+      user: this.buildUser(user, shop),
     };
   }
 
@@ -199,8 +198,13 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('账号不存在');
     }
-    // 下发店铺名称，供后台 TopBar 展示真实店名
+    // 下发真实店铺档案，供后台 TopBar / 门店档案页展示
     const shop = await this.shopRepo.findOne({ where: { shop_id: user.shop_id } });
+    return this.buildUser(user, shop);
+  }
+
+  /** 组装用户 + 店铺档案响应（login / me 共用） */
+  private buildUser(user: User, shop: Shop | null): LoginResult['user'] {
     return {
       id: user.id,
       shop_id: user.shop_id,
@@ -209,6 +213,15 @@ export class AuthService {
       role: user.role,
       status: user.status,
       shopName: shop?.name ?? '',
+      shopAddress: shop?.address ?? '',
+      shopCreatedAt: shop ? this.fmtDate(shop.created_at) : '',
     };
+  }
+
+  private fmtDate(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   }
 }

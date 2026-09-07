@@ -1,0 +1,573 @@
+<template>
+  <view class="page">
+    <!-- 顶部 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-back" @click="goBack">
+          <text class="back-icon">‹</text>
+          <text class="back-text">返回</text>
+        </view>
+        <text class="nav-title">添加打印机</text>
+        <view style="width: 120px;"></view>
+      </view>
+    </view>
+
+    <!-- 连接方式切换 -->
+    <view class="type-tabs">
+      <view
+        class="type-tab"
+        :class="{ 'type-active': type == 'bluetooth' }"
+        @click="switchType('bluetooth')"
+      >
+        <text class="tab-text">蓝牙</text>
+      </view>
+      <view
+        class="type-tab"
+        :class="{ 'type-active': type == 'wifi' }"
+        @click="switchType('wifi')"
+      >
+        <text class="tab-text">WiFi</text>
+      </view>
+    </view>
+
+    <!-- 蓝牙：设备搜索 -->
+    <view v-if="type == 'bluetooth'" class="bt-section">
+      <view class="section-head">
+        <text class="section-title">附近蓝牙打印机</text>
+        <view class="scan-btn" @click="startScan">
+          <text class="scan-text">{{ scanning ? '搜索中...' : '重新搜索' }}</text>
+        </view>
+      </view>
+
+      <scroll-view class="bt-list" scroll-y>
+        <view v-if="!adapterOpen" class="bt-empty">
+          <text class="empty-hint">蓝牙不可用</text>
+          <text class="empty-sub">请开启蓝牙并允许「附近设备」权限后重试</text>
+          <view class="hint-btn" @click="startScan">
+            <text class="hint-text">重新检查并搜索</text>
+          </view>
+        </view>
+        <view v-else-if="scanning && devices.length == 0" class="bt-empty">
+          <text class="empty-hint">正在搜索附近设备...</text>
+        </view>
+        <view v-else-if="devices.length == 0" class="bt-empty">
+          <text class="empty-hint">未发现蓝牙打印机</text>
+          <text class="empty-sub">请确认打印机已开机且处于可发现模式</text>
+        </view>
+        <view
+          v-for="d in devices"
+          :key="d.mac"
+          class="bt-item"
+          @click="selectBt(d)"
+        >
+          <view class="bt-icon">
+            <text class="icon-t">B</text>
+          </view>
+          <view class="bt-info">
+            <text class="bt-name">{{ d.name.length > 0 ? d.name : '未知设备' }}</text>
+            <text class="bt-id">{{ d.mac }}</text>
+          </view>
+          <text :class="d.bonded ? 'bt-bonded' : 'bt-unbonded'">{{ d.bonded ? '已配对' : '未配对' }}</text>
+        </view>
+      </scroll-view>
+
+      <view class="manual-row">
+        <text class="manual-label">手动输入</text>
+        <input
+          class="manual-input"
+          placeholder="MAC 地址（AA:BB:CC:DD:EE:FF）"
+          v-model="address"
+        />
+      </view>
+    </view>
+
+    <!-- WiFi：手动填写 -->
+    <view v-else class="wifi-section">
+      <view class="form-item">
+        <text class="form-label">打印机 IP</text>
+        <input
+          class="form-input"
+          placeholder="如 192.168.1.88"
+          v-model="address"
+        />
+      </view>
+      <view class="form-item">
+        <text class="form-label">端口</text>
+        <input
+          class="form-input"
+          type="number"
+          placeholder="9100（热敏打印机默认）"
+          v-model="portStr"
+        />
+      </view>
+      <view class="hint-box">
+        <text class="hint-main">💡 提示</text>
+        <text class="hint-line">热敏打印机（芯烨/飞鹅/佳博等）默认通过 9100 端口</text>
+        <text class="hint-line">确保收银机和打印机在同一局域网</text>
+      </view>
+    </view>
+
+    <!-- 公共表单 -->
+    <view class="form-section">
+      <view class="form-item">
+        <text class="form-label">打印机名称</text>
+        <input
+          class="form-input"
+          placeholder="如 前台小票机"
+          v-model="name"
+        />
+      </view>
+      <view class="form-item">
+        <text class="form-label">品牌（可选）</text>
+        <input
+          class="form-input"
+          placeholder="芯烨 / 飞鹅 / 佳博 / 商米"
+          v-model="brand"
+        />
+      </view>
+      <view class="form-item">
+        <text class="form-label">纸宽</text>
+        <view class="width-row">
+          <view
+            v-for="w in widths"
+            :key="w"
+            class="width-opt"
+                :class="{ 'width-active': widthMM == w }"
+            @click="widthMM = w"
+          >
+            <text class="width-text">{{ w }}mm</text>
+          </view>
+        </view>
+      </view>
+      <view class="form-item">
+        <text class="form-label">备注（可选）</text>
+        <input
+          class="form-input"
+          placeholder="如 前台右侧 / 荤菜档"
+          v-model="remark"
+        />
+      </view>
+      <view class="form-item switch-item">
+        <text class="form-label">设为默认打印机</text>
+        <switch :checked="isDefault" @change="onSwitch" />
+      </view>
+    </view>
+
+    <!-- 底部保存 -->
+    <view class="footer">
+      <view class="save-btn" @click="save">
+        <text class="save-text">保存</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import { createPrinter, type CreatePrinterInput } from '../../api/printers.uts'
+  import {
+    ensureBluetoothReady,
+    scanBluetoothDevices,
+    getPairedBluetooth,
+    type BluetoothDeviceInfo,
+  } from '../../uni_modules/saas-printer/utssdk/index.uts'
+
+  const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight ?? 20)
+
+  const type = ref<string>('bluetooth')
+  const name = ref<string>('')
+  const brand = ref<string>('')
+  const remark = ref<string>('')
+  const address = ref<string>('')
+  const portStr = ref<string>('9100')
+  const widthMM = ref<number>(80)
+  const isDefault = ref<boolean>(false)
+  const widths = [58, 80, 110]
+
+  // 蓝牙相关
+  const adapterOpen = ref<boolean>(false)
+  const scanning = ref<boolean>(false)
+  const devices = ref<BluetoothDeviceInfo[]>([])
+
+  // 页面打开即做一次蓝牙就绪检查（Android 12+ 会触发系统权限弹窗，属预期交互）
+  ensureBluetoothReady().then((msg: string) => {
+    adapterOpen.value = msg.length == 0
+  })
+
+  function switchType(t: string) {
+    type.value = t
+    // 切换到 WiFi 默认端口 9100，蓝牙不填端口
+    if (t == 'wifi' && !portStr.value) portStr.value = '9100'
+  }
+
+  function goBack() {
+    uni.navigateBack()
+  }
+
+  function onSwitch(e: UniSwitchChangeEvent) {
+    isDefault.value = e.detail.value
+  }
+
+  /**
+   * 蓝牙设备搜索：先做权限 / 开关就绪检查，再「已配对设备 + 附近扫描」合并展示。
+   * 扫描走原生经典蓝牙发现（约 12s），结束后自动停止。
+   */
+  async function startScan() {
+    if (scanning.value) {
+      return
+    }
+    scanning.value = true
+    devices.value = []
+    try {
+      const msg = await ensureBluetoothReady()
+      if (msg.length > 0) {
+        adapterOpen.value = false
+        scanning.value = false
+        uni.showToast({ title: msg, icon: 'none' })
+        return
+      }
+      adapterOpen.value = true
+      // 已配对设备先展示，扫描结果稍后合并
+      devices.value = getPairedBluetooth()
+      const found = await scanBluetoothDevices()
+      for (let i = 0; i < found.length; i++) {
+        const f = found[i]
+        let exists = false
+        for (let j = 0; j < devices.value.length; j++) {
+          if (devices.value[j].mac == f.mac) {
+            exists = true
+            break
+          }
+        }
+        if (!exists) {
+          devices.value.push(f)
+        }
+      }
+      scanning.value = false
+    } catch (e) {
+      scanning.value = false
+      uni.showToast({ title: (e as Error).message, icon: 'none' })
+    }
+  }
+
+  function selectBt(d: BluetoothDeviceInfo) {
+    address.value = d.mac
+    // 未填名称时用设备名补齐
+    if (name.value == '' && d.name.length > 0) {
+      name.value = d.name
+    }
+    if (d.bonded) {
+      uni.showToast({ title: '已选择: ' + (d.name.length > 0 ? d.name : d.mac), icon: 'success' })
+    } else {
+      uni.showToast({ title: '已选择未配对设备，连接时会弹出配对确认', icon: 'none' })
+    }
+  }
+
+  function save() {
+    if (name.value == '') {
+      uni.showToast({ title: '请填写打印机名称', icon: 'none' })
+      return
+    }
+    if (address.value == '') {
+      uni.showToast({ title: type.value == 'bluetooth' ? '请选择蓝牙设备' : '请填写 IP 地址', icon: 'none' })
+      return
+    }
+
+    const dto: CreatePrinterInput = {
+      name: name.value,
+      type: type.value,
+      address: address.value,
+      brand: brand.value,
+      width_mm: widthMM.value,
+      remark: remark.value,
+      is_default: isDefault.value,
+    }
+    if (type.value == 'wifi') {
+      const p = parseInt(portStr.value, 10)
+      dto.port = isNaN(p) ? 9100 : p
+    }
+
+    createPrinter(dto)
+      .then(() => {
+        uni.showToast({ title: '保存成功', icon: 'success' })
+        setTimeout(() => {
+          uni.navigateBack()
+        }, 800)
+      })
+      .catch((e) => {
+        uni.showToast({ title: (e as Error).message, icon: 'none' })
+      })
+  }
+</script>
+
+<style>
+  .page {
+    height: 100%;
+    background-color: #f5f6f8;
+  }
+
+  /* === 导航 === */
+  .nav {
+    background-color: #ff6a00;
+    padding-bottom: 20px;
+  }
+  .nav-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 24px;
+    padding-right: 24px;
+    height: 88px;
+  }
+  .nav-back {
+    flex-direction: row;
+    align-items: center;
+  }
+  .back-icon {
+    color: #ffffff;
+    font-size: 48rpx;
+    margin-right: 4px;
+  }
+  .back-text {
+    color: #ffffff;
+    font-size: 28rpx;
+  }
+  .nav-title {
+    color: #ffffff;
+    font-size: 36rpx;
+    font-weight: bold;
+  }
+
+  /* === 类型 tab === */
+  .type-tabs {
+    flex-direction: row;
+    background-color: #ffffff;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: #eee;
+  }
+  .type-tab {
+    flex: 1;
+    align-items: center;
+    padding: 24px 0;
+    border-bottom-width: 4px;
+    border-bottom-style: solid;
+    border-bottom-color: transparent;
+  }
+  .type-active {
+    border-bottom-color: #ff6a00;
+  }
+  .type-active .tab-text {
+    color: #ff6a00;
+    font-weight: bold;
+  }
+  .tab-text {
+    font-size: 30rpx;
+    color: #666666;
+  }
+
+  /* === 蓝牙区 === */
+  .bt-section {
+    background-color: #ffffff;
+    margin-top: 12px;
+  }
+  .section-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px 12px;
+  }
+  .section-title {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+  .scan-btn {
+    padding: 8px 20px;
+    background-color: #fff7e6;
+    border-radius: 24px;
+  }
+  .scan-text {
+    font-size: 24rpx;
+    color: #ff6a00;
+  }
+
+  .bt-list {
+    height: 400px;
+    padding: 0 12px;
+  }
+  .bt-empty {
+    align-items: center;
+    padding: 80px 0;
+  }
+  .empty-hint {
+    font-size: 28rpx;
+    color: #999999;
+    margin-bottom: 16px;
+  }
+  .empty-sub {
+    font-size: 24rpx;
+    color: #bbbbbb;
+  }
+  .hint-btn {
+    background-color: #ff6a00;
+    padding: 16px 40px;
+    border-radius: 44px;
+    margin-top: 12px;
+  }
+  .hint-text {
+    color: #ffffff;
+    font-size: 26rpx;
+  }
+
+  .bt-item {
+    flex-direction: row;
+    align-items: center;
+    padding: 16px;
+    background-color: #fafafa;
+    border-radius: 12px;
+    margin-bottom: 10px;
+  }
+  .bt-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    background-color: #e6f7ff;
+    align-items: center;
+    justify-content: center;
+    margin-right: 14px;
+  }
+  .icon-t {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+  .bt-info {
+    flex: 1;
+  }
+  .bt-name {
+    font-size: 28rpx;
+    color: #333333;
+    margin-bottom: 4px;
+  }
+  .bt-id {
+    font-size: 22rpx;
+    color: #999999;
+  }
+  .bt-bonded {
+    font-size: 22rpx;
+    color: #52c41a;
+  }
+  .bt-unbonded {
+    font-size: 22rpx;
+    color: #bbbbbb;
+  }
+
+  .manual-row {
+    flex-direction: row;
+    align-items: center;
+    padding: 16px 24px;
+    border-top-width: 1px;
+    border-top-style: solid;
+    border-top-color: #f0f0f0;
+  }
+  .manual-label {
+    font-size: 26rpx;
+    color: #666666;
+    margin-right: 16px;
+  }
+  .manual-input {
+    flex: 1;
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  /* === WiFi 区 === */
+  .wifi-section {
+    background-color: #ffffff;
+    margin-top: 12px;
+    padding: 20px 24px;
+  }
+  .hint-box {
+    background-color: #f6ffed;
+    padding: 16px;
+    border-radius: 8px;
+    margin-top: 16px;
+  }
+  .hint-main {
+    font-size: 26rpx;
+    color: #389e0d;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .hint-line {
+    font-size: 22rpx;
+    color: #52c41a;
+  }
+
+  /* === 公共表单 === */
+  .form-section {
+    background-color: #ffffff;
+    margin-top: 12px;
+    padding: 8px 24px;
+  }
+  .form-item {
+    flex-direction: row;
+    align-items: center;
+    padding: 20px 0;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: #f5f5f5;
+  }
+  .form-label {
+    font-size: 28rpx;
+    color: #333333;
+    width: 200px;
+  }
+  .form-input {
+    flex: 1;
+    font-size: 28rpx;
+    color: #333333;
+    text-align: right;
+  }
+  .width-row {
+    flex: 1;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+  .width-opt {
+    padding: 8px 20px;
+    margin-left: 10px;
+    border-radius: 20px;
+    background-color: #f5f6f8;
+  }
+  .width-active {
+    background-color: #ff6a00;
+  }
+  .width-text {
+    font-size: 26rpx;
+    color: #666666;
+  }
+  .width-active .width-text {
+    color: #ffffff;
+  }
+  .switch-item {
+    justify-content: space-between;
+  }
+
+  /* === 底部 === */
+  .footer {
+    padding: 24px;
+  }
+  .save-btn {
+    background-color: #ff6a00;
+    height: 88rpx;
+    border-radius: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  .save-text {
+    color: #ffffff;
+    font-size: 32rpx;
+    font-weight: bold;
+  }
+</style>

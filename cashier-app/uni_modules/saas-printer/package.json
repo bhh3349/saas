@@ -1,0 +1,17 @@
+{
+  "id": "saas-printer",
+  "name": "SaaS 打印插件",
+  "version": "1.0.0",
+  "description": "uni-app x 原生打印插件：蓝牙 SPP + WiFi TCP 发送 ESC/POS 指令",
+  "keywords": ["蓝牙打印", "WiFi打印", "SPP", "TCP", "ESC-POS", "热敏小票"],
+  "repository": "",
+  "engines": {
+    "HBuilderX": "^3.99.0"
+  },
+  "uni_modules": {
+    "type": "uts",
+    "platforms": {
+      "app-android": "3.99.0"
+    }
+  }
+}

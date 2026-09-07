@@ -17,6 +17,10 @@ export interface MerchantUser {
   status: string
   /** 店铺名称（登录 / me 下发，TopBar 展示真实店名） */
   shopName?: string
+  /** 门店地址（注册时填写，门店档案只读展示） */
+  shopAddress?: string
+  /** 开业日期（建店时间，门店档案只读展示，YYYY-MM-DD） */
+  shopCreatedAt?: string
 }
 
 export interface LoginResult {

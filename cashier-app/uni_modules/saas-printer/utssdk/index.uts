@@ -1,0 +1,135 @@
+/**
+ * saas-printer 跨平台入口
+ *
+ * Android 平台：转发到 utssdk/app-android/index.uts 的原生实现
+ * 其他平台：返回不支持错误
+ *
+ * 注意：UTS 的 Promise then 回调不支持返回值/返回 Promise（5.24 编译器），
+ * 所有链式调用一律改写为 async/await 包装函数。
+ */
+
+// #ifdef APP-ANDROID
+import {
+  sendBluetooth as _sendBluetooth,
+  sendTcp as _sendTcp,
+  isBluetoothEnabled as _isBt,
+  getPairedDevices as _getPaired,
+  startBluetoothScan as _scanBt,
+  ensureBluetoothReady as _ensureBtReady,
+  type BtDevice,
+} from './app-android/index.uts'
+// #endif
+
+/** 发送结果 */
+export type SendResult = {
+  success: boolean
+  message: string
+}
+
+/** 蓝牙设备信息（跨平台别名） */
+export type BluetoothDeviceInfo = {
+  name: string
+  mac: string
+  /** 是否已配对（未配对设备连接时会触发系统配对弹窗） */
+  bonded: boolean
+}
+
+/** 蓝牙发送（async 包装，错误转 SendResult） */
+async function sendBtResult(address: string, bytes: Uint8Array, timeout: number): Promise<SendResult> {
+  try {
+    await _sendBluetooth(address, bytes, timeout)
+    return { success: true, message: '发送成功' } as SendResult
+  } catch (e) {
+    return { success: false, message: (e as Error).message } as SendResult
+  }
+}
+
+/** WiFi 发送（async 包装） */
+async function sendTcpResult(address: string, port: number, bytes: Uint8Array, timeout: number): Promise<SendResult> {
+  try {
+    await _sendTcp(address, port, bytes, timeout)
+    return { success: true, message: '发送成功' } as SendResult
+  } catch (e) {
+    return { success: false, message: (e as Error).message } as SendResult
+  }
+}
+
+/** 统一入口：根据 type 自动选择通道 */
+export function sendBytes(type: string, address: string, port: number, bytes: Uint8Array, timeout: number = 5000): Promise<SendResult> {
+  // #ifdef APP-ANDROID
+  if (type === 'bluetooth') {
+    return sendBtResult(address, bytes, timeout)
+  }
+  if (type === 'wifi') {
+    return sendTcpResult(address, port, bytes, timeout)
+  }
+  return Promise.resolve({ success: false, message: '未知连接方式: ' + type } as SendResult)
+  // #endif
+
+  // #ifndef APP-ANDROID
+  return Promise.resolve({ success: false, message: '当前平台暂不支持打印' } as SendResult)
+  // #endif
+}
+
+/**
+ * 蓝牙就绪检查：动态申请蓝牙权限（Android 12+）并校验蓝牙开关。
+ * @returns '' 表示就绪，否则返回可直接展示给用户的错误提示
+ */
+export function ensureBluetoothReady(): Promise<string> {
+  // #ifdef APP-ANDROID
+  return _ensureBtReady()
+  // #endif
+  // #ifndef APP-ANDROID
+  return Promise.resolve('当前平台暂不支持蓝牙')
+  // #endif
+}
+
+export function isBluetoothEnabled(): boolean {
+  // #ifdef APP-ANDROID
+  return _isBt()
+  // #endif
+  // #ifndef APP-ANDROID
+  return false
+  // #endif
+}
+
+/** BtDevice → BluetoothDeviceInfo 拷贝 */
+function copyDevices(src: Array<BtDevice>): Array<BluetoothDeviceInfo> {
+  const dst: Array<BluetoothDeviceInfo> = []
+  for (let i = 0; i < src.length; i++) {
+    const s = src[i] as BtDevice
+    const d = { name: s.name, mac: s.mac, bonded: s.bonded } as BluetoothDeviceInfo
+    dst.push(d)
+  }
+  return dst
+}
+
+/** 获取已配对蓝牙设备列表 */
+export function getPairedBluetooth(): Array<BluetoothDeviceInfo> {
+  // #ifdef APP-ANDROID
+  return copyDevices(_getPaired())
+  // #endif
+  // #ifndef APP-ANDROID
+  return []
+  // #endif
+}
+
+/**
+ * 扫描附近蓝牙设备（经典蓝牙发现，约 12s）。
+ * Android 12+ 首次调用会触发权限申请弹窗（BLUETOOTH_SCAN / CONNECT）。
+ * 返回结果含已配对设备（bonded = true）。
+ */
+export function scanBluetoothDevices(): Promise<Array<BluetoothDeviceInfo>> {
+  // #ifdef APP-ANDROID
+  return scanBtResult()
+  // #endif
+  // #ifndef APP-ANDROID
+  return Promise.resolve([] as Array<BluetoothDeviceInfo>)
+  // #endif
+}
+
+/** 扫描（async 包装，错误转空数组 + 由调用方 toast 呈现的异常走 reject） */
+async function scanBtResult(): Promise<Array<BluetoothDeviceInfo>> {
+  const src = await _scanBt()
+  return copyDevices(src)
+}

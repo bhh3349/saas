@@ -1,0 +1,295 @@
+/**
+ * 订单接口
+ */
+import { request } from '../utils/request.uts'
+import { toInt, toNum } from '../utils/num.uts'
+
+export type OrderItemSnapshot = {
+  dish_id: number
+  name: string
+  spec_name: string | null
+  unit_price: number
+  qty: number
+  amount: number
+  /** 单品备注（如「不要香菜」），无备注为 null */
+  remark?: string | null
+}
+
+export type OrderItem = {
+  id: number
+  order_no: string
+  mode: string
+  /** 实际用餐人数（开台/点餐时填写） */
+  guests: number | null
+  table_id: number | null
+  ticket_no: number | null
+  status: string
+  items: OrderItemSnapshot[]
+  /** 应付金额（元） */
+  total_amount: number
+  /** 实收金额（元） */
+  paid_amount: number
+  /** 找零（元） */
+  change_amount: number
+  /** 优惠金额（元） */
+  discount_amount: number
+  /** discount / voucher / price_change */
+  discount_type: string | null
+  discount_name: string | null
+  voucher_id: number | null
+  payment_method_id: number | null
+  payment_method_name: string | null
+  remark: string
+  created_at: string
+  settled_at: string | null
+}
+
+export type OrderListResult = {
+  total: number
+  items: OrderItem[]
+}
+
+/** 点餐项：只传菜品 + 规格序号 + 数量（+ 单品备注），金额由服务端计算 */
+export type CreateOrderItem = {
+  dish_id: number
+  /** 规格序号（按菜品 specs 数组下标），缺省表示无规格 */
+  spec_index?: number
+  qty: number
+  /** 单品备注（如「不要香菜」），可选 */
+  remark?: string
+}
+
+/** 创建订单 DTO */
+export type CreateOrderDto = {
+  /** 点餐模式：table（桌台） */
+  mode: string
+  /** 桌台模式必传 */
+  table_id?: number
+  /** 实际用餐人数（可选，桌台卡片展示） */
+  guests?: number
+  items: CreateOrderItem[]
+  remark?: string
+}
+
+/** 结账 DTO */
+export type SettleOrderDto = {
+  payment_method_id: number
+  paid_amount?: number
+  discount_amount?: number
+  discount_type?: string
+  discount_name?: string
+  voucher_id?: number
+  remark?: string
+}
+
+/** 加菜 DTO */
+export type AddOrderItemsDto = {
+  items: CreateOrderItem[]
+}
+
+function parseOrder(item: UTSJSONObject): OrderItem {
+  const snapshots = item.getArray<UTSJSONObject>('items') ?? []
+  const parsedSnapshots: OrderItemSnapshot[] = []
+  for (let j = 0; j < snapshots.length; j++) {
+    const snapshot = snapshots[j]
+    const specName = snapshot['spec_name']
+    const remark = snapshot['remark']
+    parsedSnapshots.push({
+      dish_id: toInt((snapshot['dish_id'] ?? 0).toString()),
+      name: (snapshot['name'] ?? '').toString(),
+      spec_name: specName == null ? null : specName.toString(),
+      unit_price: toNum((snapshot['unit_price'] ?? 0).toString()),
+      qty: toInt((snapshot['qty'] ?? 0).toString()),
+      amount: toNum((snapshot['amount'] ?? 0).toString()),
+      remark: remark == null ? null : remark.toString(),
+    } as OrderItemSnapshot)
+  }
+
+  const guests = item['guests']
+  const tableId = item['table_id']
+  const ticketNo = item['ticket_no']
+  const discountType = item['discount_type']
+  const discountName = item['discount_name']
+  const voucherId = item['voucher_id']
+  const paymentMethodId = item['payment_method_id']
+  const paymentMethodName = item['payment_method_name']
+  const settledAt = item['settled_at']
+  return {
+    id: toInt((item['id'] ?? 0).toString()),
+    order_no: (item['order_no'] ?? '').toString(),
+    mode: (item['mode'] ?? '').toString(),
+    guests: guests == null ? null : toInt(guests.toString()),
+    table_id: tableId == null ? null : toInt(tableId.toString()),
+    ticket_no: ticketNo == null ? null : toInt(ticketNo.toString()),
+    status: (item['status'] ?? '').toString(),
+    items: parsedSnapshots,
+    total_amount: toNum((item['total_amount'] ?? 0).toString()),
+    paid_amount: toNum((item['paid_amount'] ?? 0).toString()),
+    change_amount: toNum((item['change_amount'] ?? 0).toString()),
+    discount_amount: toNum((item['discount_amount'] ?? 0).toString()),
+    discount_type: discountType == null ? null : discountType.toString(),
+    discount_name: discountName == null ? null : discountName.toString(),
+    voucher_id: voucherId == null ? null : toInt(voucherId.toString()),
+    payment_method_id: paymentMethodId == null ? null : toInt(paymentMethodId.toString()),
+    payment_method_name: paymentMethodName == null ? null : paymentMethodName.toString(),
+    remark: (item['remark'] ?? '').toString(),
+    created_at: (item['created_at'] ?? '').toString(),
+    settled_at: settledAt == null ? null : settledAt.toString(),
+  } as OrderItem
+}
+
+function parseOrderList(data: UTSJSONObject | null): OrderListResult {
+  if (data == null) return { total: 0, items: [] as OrderItem[] }
+  const items = data.getArray<UTSJSONObject>('items') ?? []
+  const orders: OrderItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    orders.push(parseOrder(items[i]))
+  }
+  return {
+    total: toInt((data['total'] ?? 0).toString()),
+    items: orders,
+  } as OrderListResult
+}
+
+/** 按状态拉订单（page_size 上限 100，桌台占用场景足够） */
+export async function fetchOrdersByStatus(status: string): Promise<OrderItem[]> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders?status=' + status + '&page_size=100',
+    method: 'GET',
+    raw: true,
+  })
+  return parseOrderList(raw.getJSON('data')).items
+}
+
+/**
+ * 桌台当前活跃订单（开台后未结账：pending + confirmed）
+ * 用于桌台卡片展示金额 / 人数 / 累计时长
+ */
+export async function fetchActiveOrders(): Promise<OrderItem[]> {
+  const pending = await fetchOrdersByStatus('pending')
+  const confirmed = await fetchOrdersByStatus('confirmed')
+  return pending.concat(confirmed)
+}
+
+/** 单个订单详情 */
+export async function fetchOrderDetail(id: number): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString(),
+    method: 'GET',
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 创建订单（开台 + 点餐合并；items 可选，用于纯开台） */
+export async function createOrder(dto: CreateOrderDto): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders',
+    method: 'POST',
+    data: dto,
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 追加菜品到已有订单（桌台循环加菜） */
+export async function addOrderItems(
+  id: number,
+  items: CreateOrderItem[],
+): Promise<OrderItem> {
+  const dto: AddOrderItemsDto = { items: items }
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/items',
+    method: 'POST',
+    data: dto,
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 结账 */
+export async function settleOrder(id: number, dto: SettleOrderDto): Promise<OrderItem> {
+  const payload = new UTSJSONObject()
+  payload['payment_method_id'] = dto.payment_method_id
+  payload['paid_amount'] = dto.paid_amount ?? 0
+  if (dto.discount_amount != null) payload['discount_amount'] = dto.discount_amount!
+  if (dto.discount_type != null) payload['discount_type'] = dto.discount_type!
+  if (dto.discount_name != null) payload['discount_name'] = dto.discount_name!
+  if (dto.voucher_id != null) payload['voucher_id'] = dto.voucher_id!
+  if (dto.remark != null) payload['remark'] = dto.remark!
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/settle',
+    method: 'POST',
+    data: payload,
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+/** 今日订单列表（按状态可选筛选，page_size 上限 100） */
+export async function fetchTodayOrders(status: string | null): Promise<OrderListResult> {
+  // 本地时区 YYYY-MM-DD
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = (d.getMonth() + 1).toString().padStart(2, '0')
+  const day = d.getDate().toString().padStart(2, '0')
+  const today = `${y}-${m}-${day}`
+  const url = status
+    ? '/orders?start_date=' + today + '&status=' + status + '&page_size=100'
+    : '/orders?start_date=' + today + '&page_size=100'
+  const raw = await request<UTSJSONObject>({ url, method: 'GET', raw: true })
+  return parseOrderList(raw.getJSON('data'))
+}
+
+/** 重新结账（completed / on_account → confirmed） */
+export async function reopenOrder(id: number): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/reopen',
+    method: 'POST',
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 退菜品 DTO（可一次退多品，金额按单价 × 份数扣减） */
+export type RefundOrderItem = {
+  dish_id: number
+  spec_name?: string
+  qty: number
+  reason?: string
+}
+
+export type RefundOrderDto = {
+  items: RefundOrderItem[]
+  reason?: string
+}
+
+/** 退菜（pending / confirmed / completed / on_account 均可，void 不可） */
+export async function refundOrder(id: number, dto: RefundOrderDto): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/refund',
+    method: 'POST',
+    data: dto,
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 接单（pending → confirmed） */
+export async function confirmOrder(id: number): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/confirm',
+    method: 'POST',
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}
+
+/** 拒单（pending → void） */
+export async function rejectOrder(id: number): Promise<OrderItem> {
+  const raw = await request<UTSJSONObject>({
+    url: '/orders/' + id.toString() + '/reject',
+    method: 'POST',
+    raw: true,
+  })
+  return parseOrder(raw.getJSON('data')!)
+}

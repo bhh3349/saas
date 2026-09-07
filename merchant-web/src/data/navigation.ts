@@ -1,8 +1,10 @@
-export interface SubMenu {
+﻿export interface SubMenu {
   key: ViewKey;
   label: string;
   /** 三级子页（可选） */
   children?: SubMenu[];
+  /** 分组容器，不作为独立页面 */
+  noPage?: boolean;
 }
 
 export interface NavItem {
@@ -77,7 +79,14 @@ export type ViewKey =
 export function findViewMeta(key: ViewKey): { label: string; group: GroupKey } | null {
   const findInSub = (subs: SubMenu[]): string | null => {
     for (const s of subs) {
-      if (s.key === key) return s.label;
+      if (s.key === key) {
+        // 有子菜单的父级：key 常与第一个子页复用，优先取子菜单中的真实页面名
+        if (s.children) {
+          const r = findInSub(s.children);
+          if (r) return r;
+        }
+        return s.label;
+      }
       if (s.children) {
         const r = findInSub(s.children);
         if (r) return r;
@@ -87,8 +96,22 @@ export function findViewMeta(key: ViewKey): { label: string; group: GroupKey } |
   };
   for (const g of NAV_GROUPS) {
     for (const item of g.items) {
-      // noPage 父级只是分组容器，不作为页面 key 匹配
-      if (!item.noPage && item.key === key) return { label: item.label, group: g.key };
+      // 父级分组容器（无独立页面）：只在子菜单中匹配
+      if (item.noPage) {
+        if (item.sub) {
+          const label = findInSub(item.sub);
+          if (label) return { label, group: g.key };
+        }
+        continue;
+      }
+      // 有子菜单的父级：key 常与第一个子页复用，优先取子菜单中的真实页面 label
+      if (item.sub && item.key === key) {
+        const label = findInSub(item.sub);
+        if (label) return { label, group: g.key };
+      }
+      // 普通页面：key 直接命中
+      if (item.key === key) return { label: item.label, group: g.key };
+      // 子菜单命中
       if (item.sub) {
         const label = findInSub(item.sub);
         if (label) return { label, group: g.key };
@@ -115,6 +138,7 @@ export const NAV_GROUPS: NavGroup[] = [
           {
             key: 'ops:checkout',
             label: '结账方式管理',
+            noPage: true,
             children: [
               { key: 'ops:checkout', label: '结账方式管理' },
               { key: 'ops:checkout:coupon', label: '券类管理' },
@@ -124,6 +148,7 @@ export const NAV_GROUPS: NavGroup[] = [
           {
             key: 'ops:print:station',
             label: '打印管理',
+            noPage: true,
             children: [
               { key: 'ops:print:station', label: '档口管理' },
               { key: 'ops:print:style', label: '票据样式' },
@@ -134,6 +159,7 @@ export const NAV_GROUPS: NavGroup[] = [
           {
             key: 'ops:business:must',
             label: '经营设置',
+            noPage: true,
             children: [
               { key: 'ops:business:must', label: '必点菜设置' },
               { key: 'ops:business:mode', label: '营业模式设置' },
@@ -145,6 +171,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'ops:dish:library',
         label: '菜品管理',
         icon: 'nav-dish',
+        noPage: true,
         sub: [
           { key: 'ops:dish:library', label: '菜品库' },
           { key: 'ops:dish:category', label: '菜单分类' },
@@ -155,6 +182,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'ops:archive:store',
         label: '档案管理',
         icon: 'nav-archive',
+        noPage: true,
         sub: [
           { key: 'ops:archive:store', label: '门店档案' },
           { key: 'ops:archive:role', label: '角色档案' },
@@ -165,6 +193,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'ops:system:device',
         label: '系统设置',
         icon: 'nav-settings',
+        noPage: true,
         sub: [
           { key: 'ops:system:device', label: '设备监控' },
           { key: 'ops:system:log', label: '运行日志' },
@@ -181,6 +210,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'rpt:biz-stats',
         label: '营业数据',
         icon: 'nav-revenue',
+        noPage: true,
         sub: [
           { key: 'rpt:biz-stats', label: '综合营业统计' },
           { key: 'rpt:promo-stats', label: '促销活动统计' },
@@ -192,6 +222,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'rpt:dish-sales',
         label: '菜品销售',
         icon: 'nav-dish-sales',
+        noPage: true,
         sub: [
           { key: 'rpt:dish-sales', label: '菜品销售统计' },
           { key: 'rpt:dish-discount', label: '菜品优惠统计' },
@@ -203,6 +234,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'rpt:in-store-orders',
         label: '订单数据',
         icon: 'nav-orders',
+        noPage: true,
         sub: [
           { key: 'rpt:in-store-orders', label: '店内订单明细' },
           { key: 'rpt:sensitive-stats', label: '敏感操作统计' },
@@ -213,6 +245,7 @@ export const NAV_GROUPS: NavGroup[] = [
         key: 'rpt:income-discount',
         label: '收入数据',
         icon: 'nav-income',
+        noPage: true,
         sub: [
           { key: 'rpt:income-discount', label: '收入优惠统计' },
           { key: 'rpt:income-coupon', label: '券收入统计' },

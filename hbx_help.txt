@@ -1,0 +1,12 @@
+2026-08-28 16:17:16.231 [INFO:] isSecondary: true
+2026-08-28 16:17:16.232 [INFO:] enum:: "cashier-app - HBuilder X 5.07"
+2026-08-28 16:17:16.232 [INFO:] valid endsWith: " - HBuilder X"
+2026-08-28 16:17:16.233 [INFO:] Find_Window: 0x704aa
+2026-08-28 16:17:16.233 [INFO:] wait aboutToQuit:
+2026-08-28 16:17:16.234 [INFO:] sendMessage: ("D:\\dev-tools\\HBuilderX\\HBuilderX.exe", "--help")
+2026-08-28 16:17:16.235 [INFO:] ( 43 )sendMessage: "D:\\dev-tools\\HBuilderX\\HBuilderX.exe|--help"
+2026-08-28 16:17:16.235 [INFO:] ( true )waitForBytesWritten
+2026-08-28 16:17:16.237 [INFO:] wait for receiveMessage
+2026-08-28 16:17:16.237 [INFO:] wait for app exec
+2026-08-28 16:17:18.232 [INFO:] app about To Quit
+2026-08-28 16:17:18.233 [INFO:] app exec end

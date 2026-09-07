@@ -1,0 +1,846 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-back" @click="goBack">
+          <text class="back-icon">←</text>
+        </view>
+        <text class="nav-title">结账</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+
+    <!-- 可滚动主体：账单 + 支付方式 + 收银键盘 -->
+    <scroll-view class="body-scroll" scroll-y>
+      <!-- 订单信息 -->
+      <view class="table-info">
+        <text class="table-info-text">订单号：{{ order ? order.order_no : '-' }}</text>
+        <text class="order-no">{{ order && order.mode == 'table' ? '桌台模式' : '叫号模式' }}</text>
+      </view>
+
+    <!-- 账单明细 -->
+    <view class="bill-section">
+      <text class="bill-title">账单明细</text>
+
+      <view v-for="(item, i) in (order && order.items) ? order.items : []" :key="i" class="bill-item">
+        <text class="bill-item-name">{{ item.name }}<text v-if="item.spec_name" class="bill-item-spec">（{{ item.spec_name }}）</text></text>
+        <text class="bill-item-qty">×{{ item.qty }}</text>
+        <text class="bill-item-amount">¥{{ item.amount.toFixed(2) }}</text>
+      </view>
+
+      <view class="bill-divider"></view>
+
+      <view class="bill-sub-row">
+        <text class="bill-sub-label">菜品价格合计</text>
+        <text class="bill-sub-value">¥{{ order ? order.total_amount.toFixed(2) : '0.00' }}</text>
+      </view>
+
+      <view v-if="discountAmount > 0" class="bill-sub-row">
+        <text class="bill-sub-label">优惠</text>
+        <text class="bill-sub-value neg">-¥{{ discountAmount.toFixed(2) }}</text>
+      </view>
+
+      <view class="bill-total-row">
+        <text class="bill-total-label">应收</text>
+        <text class="bill-total-amount">¥{{ payableAmount.toFixed(2) }}</text>
+      </view>
+    </view>
+
+    <!-- 支付方式 -->
+    <view class="pay-section">
+      <text class="pay-title">请选择支付方式</text>
+      <view class="pay-list">
+        <view
+          v-for="p in payments"
+          :key="p.id"
+          class="pay-item"
+          :class="selectedPay == p.id ? 'pay-item-on' : ''"
+          @click="selectedPay = p.id"
+        >
+          <text class="pay-icon">{{ p.icon ?? '' }}</text>
+          <text class="pay-name">{{ p.name }}</text>
+          <view class="pay-check" v-if="selectedPay == p.id">
+            <text class="pay-check-icon">✓</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 收银键盘：实收金额 + 快捷面额 + 找零 -->
+    <view class="cash-section">
+      <view class="cash-input-row">
+        <text class="cash-input-label">实收（元）</text>
+        <view class="cash-input-box">
+          <text class="cash-input-value">{{ paidDisplay }}</text>
+        </view>
+      </view>
+      <view class="cash-change-row">
+        <text v-if="paidInput.length > 0 && paidAmount < payableAmount" class="cash-change-warn">实收小于应收，不能结账</text>
+        <text v-else-if="changeAmount > 0" class="cash-change-ok">找零 ¥{{ changeAmount.toFixed(2) }}</text>
+        <text v-else class="cash-change-hint">应收 ¥{{ payableAmount.toFixed(2) }}，未输入实收时按应收结账</text>
+      </view>
+      <view class="quick-row">
+        <view v-for="v in quickAmounts" :key="v" class="quick-chip" @click="setQuick(v)">
+          <text class="quick-chip-text">¥{{ v }}</text>
+        </view>
+        <view class="quick-chip quick-chip-exact" @click="clearPaid">
+          <text class="quick-chip-exact-text">刚好</text>
+        </view>
+        <view class="quick-chip" :class="{ 'quick-chip-exact': manualDiscount > 0 }" @click="toggleMolin">
+          <text v-if="manualDiscount > 0" class="quick-chip-exact-text">已抹零</text>
+          <text v-else class="quick-chip-text">抹零</text>
+        </view>
+      </view>
+      <view class="quick-row">
+        <text class="quick-row-label">整单折扣</text>
+        <view
+          v-for="d in discountOptions"
+          :key="d.key"
+          class="quick-chip"
+          :class="{ 'quick-chip-exact': discountPercent == d.value }"
+          @click="toggleDiscount(d.value)"
+        >
+          <text class="quick-chip-text" :class="{ 'quick-chip-exact-text': discountPercent == d.value }">{{ d.label }}</text>
+        </view>
+      </view>
+      <view class="keypad">
+        <view class="key" @click="pressKey('1')"><text class="key-text">1</text></view>
+        <view class="key" @click="pressKey('2')"><text class="key-text">2</text></view>
+        <view class="key" @click="pressKey('3')"><text class="key-text">3</text></view>
+        <view class="key key-func" @click="pressBackspace"><text class="key-func-text">⌫</text></view>
+        <view class="key" @click="pressKey('4')"><text class="key-text">4</text></view>
+        <view class="key" @click="pressKey('5')"><text class="key-text">5</text></view>
+        <view class="key" @click="pressKey('6')"><text class="key-text">6</text></view>
+        <view class="key key-func" @click="clearPaid"><text class="key-func-text">清空</text></view>
+        <view class="key" @click="pressKey('7')"><text class="key-text">7</text></view>
+        <view class="key" @click="pressKey('8')"><text class="key-text">8</text></view>
+        <view class="key" @click="pressKey('9')"><text class="key-text">9</text></view>
+        <view class="key key-func" @click="pressKey('.')"><text class="key-func-text">.</text></view>
+        <view class="key" @click="pressKey('0')"><text class="key-text">0</text></view>
+        <view class="key" @click="pressKey('00')"><text class="key-text">00</text></view>
+      </view>
+    </view>
+    </scroll-view>
+
+    <!-- 底部支付栏 -->
+    <view class="pay-bar">
+      <view class="pay-bar-left">
+        <text class="pay-bar-label">实收</text>
+        <text class="pay-bar-amount">¥{{ paidAmount.toFixed(2) }}</text>
+        <text v-if="changeAmount > 0" class="pay-bar-change">找零 ¥{{ changeAmount.toFixed(2) }}</text>
+      </view>
+      <view class="pay-btn" :class="{ 'pay-btn-disabled': !canPay || paying }" @click="doSettle">
+        <text class="pay-btn-text">{{ paying ? '处理中...' : '确认支付' }}</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { fetchOrderDetail, settleOrder, type OrderItem, type SettleOrderDto } from '../../api/orders.uts'
+  import { toNum } from '../../utils/num.uts'
+  import { fetchPayments, type PaymentMethod } from '../../api/payments.uts'
+  import { printReceipt, getDefaultPrinter } from '../../utils/print-manager.uts'
+  import type { ReceiptData, ReceiptItem } from '../../utils/esc-pos.uts'
+
+  /** 结账优惠字段 */
+  type DiscountFields = {
+    amount: number
+    type: string
+    name: string
+  }
+
+  /** 整单折扣选项 */
+  type DiscountOption = {
+    key: string
+    label: string
+    value: number
+  }
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        orderId: 0,
+        order: null as OrderItem | null,
+        payments: [] as PaymentMethod[],
+        selectedPay: 0,
+        paying: false,
+        /** 手动输入优惠金额（抹零等） */
+        manualDiscount: 0,
+        /** 实收金额输入（键盘输入的字符串；空 = 按应收结账） */
+        paidInput: '',
+        /** 快捷面额按钮 */
+        quickAmounts: [10, 20, 50, 100],
+        /** 整单折扣选项（百分比，90 = 9折） */
+        discountOptions: [
+          { key: 'd90', label: '9折', value: 90 },
+          { key: 'd88', label: '8.8折', value: 88 },
+          { key: 'd80', label: '8折', value: 80 }
+        ] as DiscountOption[],
+        /** 当前选中折扣（0 = 无） */
+        discountPercent: 0
+      }
+    },
+    computed: {
+      /** 折扣优惠额（基于菜品合计计算，与抹零可叠加） */
+      percentOffAmount(): number {
+        if (this.discountPercent <= 0 || !this.order) return 0
+        const off = this.order.total_amount * (1 - this.discountPercent / 100)
+        return Math.round(off * 100) / 100
+      },
+      discountAmount(): number {
+        // 订单已有优惠 + 折扣 + 手动抹零
+        const existing = this.order ? (this.order.discount_amount ?? 0) : 0
+        return existing + this.percentOffAmount + this.manualDiscount
+      },
+      /** 优惠名称快照（展示 / 下发用） */
+      discountNameText(): string {
+        const parts: string[] = []
+        if (this.percentOffAmount > 0) {
+          parts.push('手动' + (this.discountPercent / 10) + '折')
+        }
+        if (this.manualDiscount > 0) {
+          parts.push('抹零')
+        }
+        return parts.join('+')
+      },
+      payableAmount(): number {
+        if (!this.order) return 0
+        const amt = this.order.total_amount - this.discountAmount
+        return amt > 0 ? amt : 0
+      },
+      /** 实收展示：未输入时按应收 */
+      paidDisplay(): string {
+        return this.paidInput.length > 0 ? this.paidInput : this.payableAmount.toFixed(2)
+      },
+      paidAmount(): number {
+        if (this.paidInput.length == 0) {
+          return this.payableAmount
+        }
+        const v = toNum(this.paidInput)
+        if (isNaN(v) || v < 0) {
+          return 0
+        }
+        return v
+      },
+      /** 找零 = 实收 - 应收（实收大于应收时） */
+      changeAmount(): number {
+        const c = this.paidAmount - this.payableAmount
+        return c > 0 ? c : 0
+      },
+      canPay(): boolean {
+        return this.order != null && this.payments.length > 0 && this.selectedPay > 0 && this.paidAmount >= this.payableAmount
+      }
+    },
+    onLoad(options: OnLoadOptions) {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+      const oidRaw = parseFloat(options['order_id'] ?? '')
+      this.orderId = isNaN(oidRaw) ? 0 : oidRaw
+    },
+    onShow() {
+      this.load()
+    },
+    methods: {
+      async load() {
+        try {
+          this.order = await fetchOrderDetail(this.orderId)
+          this.payments = await fetchPayments()
+          if (this.payments.length > 0) {
+            this.selectedPay = this.payments[0].id
+          }
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        }
+      },
+      /** 结账成功后异步打印小票（fire-and-forget） */
+      async autoPrintReceipt(settledOrder: OrderItem) {
+        const printer = await getDefaultPrinter()
+        if (printer == null) return
+        let shopName = '餐饮收银'
+        try {
+          const rawUser = uni.getStorageSync('user') as string
+          const user = JSON.parse(rawUser) as UTSJSONObject
+          shopName = (user['shopName'] as string) ?? '餐饮收银'
+        } catch (_) {}
+        const receiptItems: ReceiptItem[] = []
+        for (let i = 0; i < settledOrder.items.length; i++) {
+          const it = settledOrder.items[i]
+          const item: ReceiptItem = {
+            name: it.name,
+            qty: it.qty,
+            price: it.unit_price,
+            subtotal: it.amount,
+            spec: it.spec_name ?? '',
+            remark: it.remark ?? ''
+          }
+          receiptItems.push(item)
+        }
+        const data: ReceiptData = {
+          shopName: shopName,
+          orderNo: settledOrder.order_no,
+          tableNo: settledOrder.table_id != null ? '#' + settledOrder.table_id!.toString() : '',
+          guests: settledOrder.guests ?? 0,
+          createTime: settledOrder.created_at ?? '',
+          settleTime: new Date().toLocaleString(),
+          items: receiptItems,
+          totalAmount: settledOrder.total_amount,
+          paidAmount: settledOrder.paid_amount,
+          discountAmount: settledOrder.discount_amount ?? 0,
+          paymentMethod: settledOrder.payment_method_name ?? '',
+          remark: settledOrder.remark ?? ''
+        }
+        const r = await printReceipt(data, printer)
+        if (!r.success) {
+          console.warn('自动打印失败:', r.message)
+        }
+      },
+      goBack() {
+        uni.navigateBack()
+      },
+      /** 数字键盘：追加字符（最多一位小数点、两位小数） */
+      pressKey(k: string) {
+        if (k == '.') {
+          if (this.paidInput.indexOf('.') >= 0) return
+          // 空输入时点小数点，补前导 0
+          if (this.paidInput.length == 0) {
+            this.paidInput = '0.'
+            return
+          }
+          this.paidInput = this.paidInput + '.'
+          return
+        }
+        // 小数位已满两位则不再追加
+        const dotIdx = this.paidInput.indexOf('.')
+        if (dotIdx >= 0 && this.paidInput.length - dotIdx - 1 >= 2) {
+          return
+        }
+        // 长度保护（含 00 键），避免异常长输入
+        if (this.paidInput.length >= 8) {
+          return
+        }
+        // 前导 0：已有 0 且无小数点时，数字替换 0（00 键同理不叠加）
+        if (this.paidInput == '0') {
+          if (k == '0' || k == '00') {
+            return
+          }
+          this.paidInput = k
+          return
+        }
+        this.paidInput = this.paidInput + k
+      },
+      /** 退格：删掉末位字符 */
+      pressBackspace() {
+        if (this.paidInput.length > 0) {
+          this.paidInput = this.paidInput.substring(0, this.paidInput.length - 1)
+        }
+      },
+      /** 清空实收（回到按应收结账） */
+      clearPaid() {
+        this.paidInput = ''
+      },
+      /** 快捷面额：直接填入整额 */
+      setQuick(v: number) {
+        this.paidInput = v.toString()
+      },
+      /** 抹零开关：抹至整数元（去掉角分）；再点一次取消 */
+      toggleMolin() {
+        if (this.manualDiscount > 0) {
+          this.manualDiscount = 0
+          return
+        }
+        const amt = this.payableAmount
+        const molin = amt - Math.floor(amt)
+        if (molin > 0) {
+          this.manualDiscount = Math.round(molin * 100) / 100
+        } else {
+          uni.showToast({ title: '金额已是整数，无需抹零', icon: 'none' })
+        }
+      },
+      /** 整单折扣开关（再点一次取消） */
+      toggleDiscount(p: number) {
+        this.discountPercent = this.discountPercent == p ? 0 : p
+      },
+      /**
+       * 组装优惠参数：打折 + 抹零可叠加。
+       * 只有打折 → discount；只有抹零 → price_change；两者都有 → discount（名称合并）。
+       */
+      buildDiscountFields(): DiscountFields | null {
+        const total = this.percentOffAmount + this.manualDiscount
+        if (total <= 0) {
+          return null
+        }
+        if (this.percentOffAmount > 0) {
+          return { amount: total, type: 'discount', name: this.discountNameText } as DiscountFields
+        }
+        return { amount: total, type: 'price_change', name: '抹零' } as DiscountFields
+      },
+      async doSettle() {
+        if (!this.canPay) {
+          if (this.paidAmount < this.payableAmount) {
+            uni.showToast({ title: '实收不能小于应收', icon: 'none' })
+          }
+          return
+        }
+        if (this.paying) return
+        this.paying = true
+        try {
+          const df = this.buildDiscountFields()
+          const dto: SettleOrderDto = {
+            payment_method_id: this.selectedPay,
+            paid_amount: this.paidAmount,
+          }
+          if (df != null) {
+            dto.discount_amount = df.amount
+            dto.discount_type = df.type
+            dto.discount_name = df.name
+          }
+          const settle = await settleOrder(this.orderId, dto)
+
+          uni.showToast({
+            title: this.changeAmount > 0 ? ('支付成功，找零 ¥' + this.changeAmount.toFixed(2)) : '支付成功',
+            icon: 'none'
+          })
+
+          // 异步打印小票（fire-and-forget，不阻塞结账流程）
+          this.autoPrintReceipt(settle)
+
+          // 延迟后返回主页（桌台已释放）
+          setTimeout(() => {
+            uni.reLaunch({ url: '/pages/tables/index' })
+          }, 1000)
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        } finally {
+          this.paying = false
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  .page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f6f8;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .nav-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 88rpx;
+    padding: 0 24rpx;
+  }
+
+  .nav-back {
+    width: 80rpx;
+    height: 60rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .back-icon {
+    font-size: 44rpx;
+    color: #ffffff;
+  }
+
+  .nav-title {
+    flex: 1;
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+  }
+
+  .nav-right {
+    width: 80rpx;
+  }
+
+  /* 可滚动主体 */
+  .body-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* 桌台信息 */
+  .table-info {
+    padding: 20rpx 24rpx;
+    background-color: #ffffff;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .table-info-text {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .order-no {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  /* 账单明细 */
+  .bill-section {
+    margin: 16rpx 24rpx;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    padding: 24rpx;
+  }
+
+  .bill-title {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-bottom: 20rpx;
+  }
+
+  .bill-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 12rpx 0;
+  }
+
+  .bill-item-name {
+    flex: 1;
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  .bill-item-spec {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .bill-item-qty {
+    font-size: 26rpx;
+    color: #666666;
+    margin-right: 16rpx;
+  }
+
+  .bill-item-amount {
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  .bill-divider {
+    height: 1rpx;
+    background-color: #eeeeee;
+    margin: 16rpx 0;
+  }
+
+  .bill-sub-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 8rpx 0;
+  }
+
+  .bill-sub-label {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .bill-sub-value {
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  .neg {
+    color: #52c41a;
+  }
+
+  .bill-total-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20rpx 0 0;
+    margin-top: 8rpx;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #eeeeee;
+  }
+
+  .bill-total-label {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .bill-total-amount {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  /* 支付方式 */
+  .pay-section {
+    margin: 16rpx 24rpx;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    padding: 24rpx;
+  }
+
+  .pay-title {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-bottom: 20rpx;
+  }
+
+  .pay-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pay-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 24rpx 16rpx;
+    border-radius: 12rpx;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: transparent;
+  }
+
+  .pay-item-on {
+    border-color: #ff6a00;
+    background-color: #fff8f0;
+  }
+
+  .pay-icon {
+    font-size: 40rpx;
+    margin-right: 16rpx;
+  }
+
+  .pay-name {
+    flex: 1;
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .pay-check {
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    background-color: #ff6a00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .pay-check-icon {
+    font-size: 24rpx;
+    color: #ffffff;
+  }
+
+  /* 收银键盘 */
+  .cash-section {
+    margin: 16rpx 24rpx;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    padding: 24rpx;
+  }
+
+  .cash-input-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .cash-input-label {
+    font-size: 28rpx;
+    color: #333333;
+    width: 180rpx;
+  }
+
+  .cash-input-box {
+    flex: 1;
+    height: 88rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 24rpx;
+  }
+
+  .cash-input-value {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .cash-change-row {
+    margin-top: 12rpx;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .cash-change-hint {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .cash-change-ok {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #52c41a;
+  }
+
+  .cash-change-warn {
+    font-size: 24rpx;
+    color: #f5222d;
+  }
+
+  .quick-row {
+    margin-top: 16rpx;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .quick-row-label {
+    font-size: 24rpx;
+    color: #999999;
+    width: 106rpx;
+  }
+
+  .quick-chip {
+    width: 106rpx;
+    height: 64rpx;
+    background-color: #f5f6f8;
+    border-radius: 32rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .quick-chip-text {
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .quick-chip-exact {
+    background-color: #fff4ec;
+  }
+
+  .quick-chip-exact-text {
+    font-size: 28rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .keypad {
+    margin-top: 16rpx;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .key {
+    width: 165rpx;
+    height: 88rpx;
+    margin-right: 10rpx;
+    margin-bottom: 10rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .key-text {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .key-func {
+    background-color: #fff4ec;
+  }
+
+  .key-func-text {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .pay-bar-change {
+    font-size: 26rpx;
+    color: #52c41a;
+    margin-left: 16rpx;
+  }
+
+  /* 底部支付栏 */
+  .pay-bar {
+    height: 120rpx;
+    background-color: #ffffff;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #eeeeee;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 24rpx;
+  }
+
+  .pay-bar-left {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .pay-bar-label {
+    font-size: 26rpx;
+    color: #666666;
+    margin-right: 12rpx;
+  }
+
+  .pay-bar-amount {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .pay-btn {
+    height: 88rpx;
+    padding: 0 64rpx;
+    background-color: #ff6a00;
+    border-radius: 44rpx;
+    display: flex;
+    align-items: center;
+  }
+
+  .pay-btn-disabled {
+    background-color: #cccccc;
+  }
+
+  .pay-btn-text {
+    font-size: 30rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+</style>

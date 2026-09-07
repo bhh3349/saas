@@ -10,8 +10,8 @@ import {
   deleteAttributeApi,
 } from '../api/attributes';
 
-/** 属性类型 Tab */
-type AttrTab = '规格' | '做法' | '单位管理';
+/** 属性类型 Tab（对齐美团：规格/做法/加料/餐盒/单位/标签） */
+type AttrTab = '规格' | '做法' | '加料' | '餐盒' | '单位管理' | '标签管理';
 
 /** 菜品属性项 */
 interface DishAttr {
@@ -23,13 +23,17 @@ interface DishAttr {
   preset: boolean;
 }
 
-const TAB_LIST: AttrTab[] = ['规格', '做法', '单位管理'];
+const TAB_LIST: AttrTab[] = ['规格', '做法', '加料', '餐盒', '单位管理', '标签管理'];
 
 /** Tab → 后端 kind */
-const KIND: Record<AttrTab, 'spec' | 'method' | 'unit'> = {
+type AttrKind = 'spec' | 'method' | 'unit' | 'topping' | 'box' | 'tag';
+const KIND: Record<AttrTab, AttrKind> = {
   规格: 'spec',
   做法: 'method',
+  加料: 'topping',
+  餐盒: 'box',
   单位管理: 'unit',
+  标签管理: 'tag',
 };
 
 /** 后端属性 → 页面条目（关联菜品数量由后端后续统计，当前展示 0） */
@@ -39,7 +43,14 @@ function toLocalAttr(it: { id: number; name: string; preset: boolean }): DishAtt
 
 export default function DishAttribute() {
   const [activeTab, setActiveTab] = useState<AttrTab>('规格');
-  const [items, setItems] = useState<Record<AttrTab, DishAttr[]>>({ 规格: [], 做法: [], 单位管理: [] });
+  const [items, setItems] = useState<Record<AttrTab, DishAttr[]>>({
+    规格: [],
+    做法: [],
+    加料: [],
+    餐盒: [],
+    单位管理: [],
+    标签管理: [],
+  });
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [modalOpen, setModalOpen] = useState(false);

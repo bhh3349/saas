@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import SearchForm from '../components/SearchForm';
 import Toast, { type ToastData } from '../components/Toast';
 import { getBucket } from '../api/buckets';
+import { fetchStaffList } from '../api/staff';
 
 /** 角色 / 员工配置桶 key */
 const ROLE_BUCKET = 'role';
-const STAFF_BUCKET = 'staff';
 
 /** 角色状态 */
 type RoleStatus = '启用' | '禁用';
@@ -53,10 +53,6 @@ const DEFAULT_ROLES: RoleInfo[] = [
   },
 ];
 
-interface StaffLike {
-  role: string;
-}
-
 /** 角色权限范围一句话描述 */
 function roleScope(name: string): string {
   switch (name) {
@@ -71,6 +67,13 @@ function roleScope(name: string): string {
   }
 }
 
+/** UI 中文名 → 后端 role 字段 */
+const ROLE_NAME_TO_KEY: Record<string, string> = {
+  老板: 'boss',
+  收银员: 'cashier',
+  财务: 'finance',
+};
+
 export default function RoleManage() {
   const [roles, setRoles] = useState<RoleInfo[]>(DEFAULT_ROLES);
   const [roleCounts, setRoleCounts] = useState<Record<string, number>>({});
@@ -78,7 +81,7 @@ export default function RoleManage() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastData | null>(null);
 
-  /** 从云端加载角色列表与各角色绑定账号数（员工数） */
+  /** 从后端拉真实员工数按角色聚合（与员工档案同源） */
   useEffect(() => {
     let active = true;
     (async () => {
@@ -89,16 +92,16 @@ export default function RoleManage() {
         /* 忽略加载失败 */
       }
       try {
-        const staffs = await getBucket<StaffLike[]>(STAFF_BUCKET);
-        if (active && Array.isArray(staffs)) {
+        const res = await fetchStaffList({ page: 1, page_size: 1000 });
+        if (active) {
           const map: Record<string, number> = {};
-          staffs.forEach((s) => {
-            if (s && s.role) map[s.role] = (map[s.role] ?? 0) + 1;
+          res.items.forEach((s) => {
+            map[s.role] = (map[s.role] ?? 0) + 1;
           });
           setRoleCounts(map);
         }
       } catch {
-        /* 忽略加载失败 */
+        /* 忽略加载失败（非老板角色无权限访问，此时 count 保持 0） */
       }
     })();
     return () => {
@@ -165,7 +168,7 @@ export default function RoleManage() {
                       <td>
                         <span style={{ fontWeight: 600 }}>{r.name}</span>
                       </td>
-                      <td className="td-center">{roleCounts[r.name] ?? 0}</td>
+                      <td className="td-center">{roleCounts[ROLE_NAME_TO_KEY[r.name]] ?? 0}</td>
                       <td>{roleScope(r.name)}</td>
                       <td className="td-center">
                         <span className={`status-tag ${r.status === '启用' ? 'status-on' : 'status-off'}`}>

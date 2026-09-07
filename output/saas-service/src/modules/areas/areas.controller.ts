@@ -22,6 +22,21 @@ import { CreateAreasDto } from './dto/create-areas.dto';
 import { SortAreasDto } from './dto/sort-areas.dto';
 import { UpdateAreaDto } from './dto/update-area.dto';
 
+/**
+ * 收银工作台区域列表（所有登录角色可用，含桌台数）
+ * 桌台页区域 tab 排序依据：/areas（按后台 sort 升序）
+ */
+@Controller('areas')
+@UseGuards(JwtAuthGuard)
+export class AreasController {
+  constructor(private readonly areasService: AreasService) {}
+
+  @Get()
+  list(@CurrentUser() user: AuthUser) {
+    return this.areasService.list(user);
+  }
+}
+
 /** 桌台区域管理（仅老板） */
 @Controller('admin/areas')
 @UseGuards(JwtAuthGuard, RolesGuard)

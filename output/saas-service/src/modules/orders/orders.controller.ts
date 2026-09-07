@@ -16,7 +16,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../../common/enums';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { CreateOrderDto } from './dto/create-order.dto';
+import { CreateOrderDto, AddOrderItemsDto } from './dto/create-order.dto';
 import { ListOrdersDto } from './dto/list-orders.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import { SettleOrderDto } from './dto/settle-order.dto';
@@ -35,7 +35,7 @@ export class OrdersController {
     return this.ordersService.create(user, dto);
   }
 
-  /** 订单流（按状态筛选） */
+  /** 订单流（按状态 + 日期筛选） */
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: ListOrdersDto) {
     return this.ordersService.list(
@@ -43,7 +43,28 @@ export class OrdersController {
       query.page || 1,
       query.page_size || 20,
       query.status,
+      query.start_date,
+      query.end_date,
     );
+  }
+
+  /** 单个订单详情（占用桌台查看） */
+  @Get(':id')
+  findOne(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.ordersService.findOne(user, id);
+  }
+
+  /** 追加菜品到已有订单（桌台循环加菜） */
+  @Post(':id/items')
+  addItems(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AddOrderItemsDto,
+  ) {
+    return this.ordersService.addItems(user, id, dto);
   }
 
   /** 接单 */
@@ -100,5 +121,14 @@ export class OrdersController {
     @Param('id', ParseIntPipe) id: number,
   ) {
     return this.ordersService.onAccount(user, id);
+  }
+
+  /** 重新结账（已结账 / 挂账 → 已下单，清空记账） */
+  @Post(':id/reopen')
+  reopen(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.ordersService.reopen(user, id);
   }
 }

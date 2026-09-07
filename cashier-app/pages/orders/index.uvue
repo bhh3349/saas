@@ -1,0 +1,449 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航：首页图标 + 功能名 + 刷新 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-home" @click="goHome">
+          <text class="home-icon">⌂</text>
+          <text class="home-text">首页</text>
+        </view>
+        <text class="nav-title">订单管理</text>
+        <view class="nav-home" @click="load">
+          <text class="home-icon">⟳</text>
+          <text class="home-text">刷新</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 状态筛选 tabs -->
+    <view class="tabs">
+      <view
+        v-for="t in tabs"
+        :key="t.key"
+        class="tab-item"
+        :class="{ 'tab-active': tabKey == t.key }"
+        @click="switchTab(t.key)"
+      >
+        <text class="tab-label">{{ t.label }}</text>
+        <text v-if="t.count > 0" class="tab-count">{{ t.count }}</text>
+      </view>
+    </view>
+
+    <!-- 汇总条 -->
+    <view v-if="filtered.length > 0" class="summary-bar">
+      <text class="summary-total">共 {{ filtered.length }} 单</text>
+      <text class="summary-amount">合计 ¥{{ totalAmount }}</text>
+    </view>
+
+    <!-- 订单列表 -->
+    <scroll-view class="list" scroll-y @scrolltolower="loadMore">
+      <view v-if="filtered.length == 0" class="empty">
+        <text class="empty-icon">📋</text>
+        <text class="empty-text">今日暂无订单</text>
+      </view>
+      <view
+        v-for="o in filtered"
+        :key="o.id"
+        class="order-card"
+        @click="goDetail(o)"
+      >
+        <!-- 头部：订单号 + 桌台 + 状态 -->
+        <view class="card-head">
+          <view class="card-head-left">
+            <text class="order-no">{{ o.order_no }}</text>
+            <text class="order-target">{{ targetText(o) }}</text>
+          </view>
+          <view class="status-tag" :class="'status-' + o.status">
+            <text class="status-text">{{ statusLabel(o.status) }}</text>
+          </view>
+        </view>
+
+        <!-- 菜品摘要 -->
+        <view class="card-items">
+          <text class="items-text">{{ itemsSummary(o) }}</text>
+        </view>
+
+        <!-- 底部：金额 + 时间 -->
+        <view class="card-foot">
+          <text class="amount-label">{{ amountLabel(o) }}</text>
+          <text class="amount-value">¥{{ o.total_amount }}</text>
+          <text class="foot-time">{{ formatTime(o.created_at) }}</text>
+        </view>
+
+        <!-- 已结账订单显示实收 -->
+        <view v-if="o.status == 'completed' && o.paid_amount > 0" class="card-foot2">
+          <text class="foot-sub">实记 ¥{{ o.paid_amount }}</text>
+          <text v-if="o.discount_amount > 0" class="foot-sub">优惠 ¥{{ o.discount_amount }}</text>
+          <text v-if="o.payment_method_name" class="foot-sub">· {{ o.payment_method_name }}</text>
+        </view>
+      </view>
+
+      <view class="list-bottom">
+        <text class="bottom-text">— 今日已全部加载 —</text>
+      </view>
+    </scroll-view>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import {
+    fetchTodayOrders,
+    type OrderItem,
+  } from '../../api/orders.uts'
+
+  type Tab = { key: string; label: string; count: number }
+
+  const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight ?? 20)
+
+  /** 全部今日订单（后端不筛选状态，前端按 tab 过滤） */
+  const all = ref<OrderItem[]>([])
+  const tabKey = ref<string>('all')
+
+  const tabs = computed<Tab[]>(() => {
+    const list = all.value
+    return [
+      { key: 'all', label: '全部', count: list.length },
+      {
+        key: 'active',
+        label: '进行中',
+        count: list.filter((o) => o.status == 'pending' || o.status == 'confirmed').length,
+      },
+      {
+        key: 'completed',
+        label: '已结账',
+        count: list.filter((o) => o.status == 'completed').length,
+      },
+      {
+        key: 'on_account',
+        label: '挂账',
+        count: list.filter((o) => o.status == 'on_account').length,
+      },
+      {
+        key: 'void',
+        label: '已作废',
+        count: list.filter((o) => o.status == 'void').length,
+      },
+    ]
+  })
+
+  const filtered = computed<OrderItem[]>(() => {
+    if (tabKey.value == 'all') return all.value
+    if (tabKey.value == 'active') {
+      return all.value.filter((o) => o.status == 'pending' || o.status == 'confirmed')
+    }
+    return all.value.filter((o) => o.status == tabKey.value)
+  })
+
+  const totalAmount = computed<string>(() => {
+    const sum = filtered.value.reduce((s, o) => s + (o.total_amount ?? 0), 0)
+    return sum.toFixed(2)
+  })
+
+  function switchTab(key: string) {
+    tabKey.value = key
+  }
+
+  async function load() {
+    try {
+      uni.showLoading({ title: '加载中', mask: true })
+      const res = await fetchTodayOrders(null)
+      all.value = res.items ?? []
+    } catch (e) {
+      uni.showToast({ title: (e as Error).message, icon: 'none' })
+    } finally {
+      uni.hideLoading()
+    }
+  }
+
+  function loadMore() {
+    // 今日数据一页 100 足够，无需分页
+  }
+
+  function goHome() {
+    uni.reLaunch({ url: '/pages/home/index' })
+  }
+
+  function goDetail(o: OrderItem) {
+    const params: string[] = ['id=' + o.id.toString(), 'from=orders']
+    uni.navigateTo({ url: '/pages/order-detail/index?' + params.join('&') })
+  }
+
+  function statusLabel(s: string): string {
+    switch (s) {
+      case 'pending':
+        return '待接单'
+      case 'confirmed':
+        return '进行中'
+      case 'completed':
+        return '已结账'
+      case 'on_account':
+        return '挂账'
+      case 'void':
+        return '已作废'
+      default:
+        return s
+    }
+  }
+
+  function targetText(o: OrderItem): string {
+    if (o.table_id) return '桌台 #' + (o.table_id ?? 0).toString()
+    if (o.ticket_no) return '叫号 #' + (o.ticket_no ?? 0).toString()
+    return '散客'
+  }
+
+  function itemsSummary(o: OrderItem): string {
+    const list = o.items ?? []
+    if (list.length == 0) return '（开台未点菜）'
+    const first = list[0]
+    if (list.length == 1) return first.name + ' ×' + first.qty.toString()
+    return first.name + ' ×' + first.qty.toString() + ' 等 ' + list.length.toString() + ' 项'
+  }
+
+  function amountLabel(o: OrderItem): string {
+    if (o.status == 'completed') return '应收'
+    return '合计'
+  }
+
+  function formatTime(iso: string): string {
+    if (iso == '') return ''
+    // ISO 如 2026-08-28T13:15:20.000Z — 取本地 HH:mm
+    const d = new Date(iso)
+    const h = d.getHours().toString().padStart(2, '0')
+    const m = d.getMinutes().toString().padStart(2, '0')
+    return h + ':' + m
+  }
+
+  onShow(() => {
+    load()
+  })
+</script>
+
+<style>
+  .page {
+    height: 100%;
+    background-color: #f5f6f8;
+  }
+
+  /* === 导航栏 === */
+  .nav {
+    background-color: #ff6a00;
+    padding-bottom: 20px;
+  }
+  .nav-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 24px;
+    padding-right: 24px;
+    height: 88px;
+  }
+  .nav-home {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+  }
+  .home-icon {
+    color: #ffffff;
+    font-size: 32rpx;
+    margin-right: 6px;
+  }
+  .home-text {
+    color: #ffffff;
+    font-size: 24rpx;
+  }
+  .nav-title {
+    color: #ffffff;
+    font-size: 36rpx;
+    font-weight: bold;
+  }
+
+  /* === tabs === */
+  .tabs {
+    flex-direction: row;
+    background-color: #ffffff;
+    padding: 16px 12px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: #eee;
+  }
+  .tab-item {
+    flex: 1;
+    align-items: center;
+    padding: 12px 0;
+    position: relative;
+  }
+  .tab-active {
+    border-bottom-width: 4px;
+    border-bottom-style: solid;
+    border-bottom-color: #ff6a00;
+  }
+  .tab-active .tab-label {
+    color: #ff6a00;
+    font-weight: bold;
+  }
+  .tab-label {
+    font-size: 28rpx;
+    color: #666666;
+  }
+  .tab-count {
+    margin-left: 4px;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  /* === 汇总条 === */
+  .summary-bar {
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background-color: #ffffff;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+  }
+  .summary-total {
+    font-size: 26rpx;
+    color: #666666;
+  }
+  .summary-amount {
+    font-size: 26rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  /* === 列表 === */
+  .list {
+    flex: 1;
+    padding: 12px;
+  }
+  .empty {
+    align-items: center;
+    padding: 120px 0;
+  }
+  .empty-icon {
+    font-size: 80rpx;
+    margin-bottom: 20px;
+  }
+  .empty-text {
+    font-size: 28rpx;
+    color: #999999;
+  }
+
+  /* === 订单卡片 === */
+  .order-card {
+    background-color: #ffffff;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    border-radius: 16px;
+  }
+  .card-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .card-head-left {
+    flex: 1;
+    flex-direction: row;
+    align-items: center;
+  }
+  .order-no {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-right: 12px;
+  }
+  .order-target {
+    font-size: 24rpx;
+    color: #999999;
+    background-color: #f5f6f8;
+    padding: 4px 10px;
+    border-radius: 8px;
+  }
+  .status-tag {
+    padding: 6px 14px;
+    border-radius: 20px;
+  }
+  .status-pending {
+    background-color: #fff7e6;
+  }
+  .status-pending .status-text {
+    color: #fa8c16;
+  }
+  .status-confirmed {
+    background-color: #e6f7ff;
+  }
+  .status-confirmed .status-text {
+    color: #1890ff;
+  }
+  .status-completed {
+    background-color: #f6ffed;
+  }
+  .status-completed .status-text {
+    color: #52c41a;
+  }
+  .status-on_account {
+    background-color: #f9f0ff;
+  }
+  .status-on_account .status-text {
+    color: #722ed1;
+  }
+  .status-void {
+    background-color: #f5f5f5;
+  }
+  .status-void .status-text {
+    color: #999999;
+  }
+  .status-text {
+    font-size: 22rpx;
+  }
+
+  .card-items {
+    margin-bottom: 12px;
+  }
+  .items-text {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .card-foot {
+    flex-direction: row;
+    align-items: center;
+  }
+  .amount-label {
+    font-size: 22rpx;
+    color: #999999;
+    margin-right: 8px;
+  }
+  .amount-value {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #ff6a00;
+    flex: 1;
+  }
+  .foot-time {
+    font-size: 24rpx;
+    color: #bbbbbb;
+  }
+  .card-foot2 {
+    flex-direction: row;
+    margin-top: 8px;
+  }
+  .foot-sub {
+    font-size: 22rpx;
+    color: #bbbbbb;
+    margin-right: 16px;
+  }
+
+  .list-bottom {
+    padding: 24px 0 40px;
+    align-items: center;
+  }
+  .bottom-text {
+    font-size: 22rpx;
+    color: #cccccc;
+  }
+</style>

@@ -1,0 +1,380 @@
+<template>
+  <view class="home-page">
+    <!-- 自定义头部 -->
+    <view class="header" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="header-inner">
+        <view class="header-left">
+            <text class="shop-name">{{ user?.shopName ?? '' }}</text>
+          <text class="sub-text">{{ roleLabel }}</text>
+        </view>
+        <!-- 右上角头像 -->
+        <view class="header-right" @click="menuOpen = !menuOpen">
+          <view class="avatar">
+            <text class="avatar-text">{{ avatarText }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 头像下拉：连接状态 / 环境切换 / 退出登录 -->
+    <view v-if="menuOpen" class="pop-mask" @click="menuOpen = false"></view>
+    <view v-if="menuOpen" class="popover">
+      <view class="pop-item" @click="refreshStatus">
+        <text class="conn-dot" :class="connOk ? 'conn-on' : 'conn-off'"></text>
+        <text class="pop-text">{{ connOk ? '服务连接正常' : '服务连接失败' }}</text>
+      </view>
+      <view class="pop-divider"></view>
+      <view class="pop-item" @click="chooseEnv">
+        <text class="pop-text">环境：{{ envLabel }}</text>
+      </view>
+      <view class="pop-divider"></view>
+      <view class="pop-item" @click="logout">
+        <text class="pop-text">退出登录</text>
+      </view>
+    </view>
+
+    <!-- 今日营业额（仅显示营业额，无报表详细数据） -->
+    <view class="revenue-bar">
+      <text class="revenue-label">今日营业额（元）</text>
+      <text class="revenue-value">{{ revenueText }}</text>
+    </view>
+
+    <!-- 功能入口：桌台 / 点餐 / 接单 / 订单 / 打印 -->
+    <view class="menu-grid">
+      <view class="menu-card" v-for="m in menus" :key="m.key" @click="onMenu(m.key)">
+        <text class="menu-icon">{{ m.icon }}</text>
+        <text class="menu-name">{{ m.name }}</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { fetchToday, type ReportSummary } from '../../api/reports.uts'
+  import { clearToken } from '../../utils/request.uts'
+  import { fetchMe, type LoginUser } from '../../api/auth.uts'
+  import { toNum } from '../../utils/num.uts'
+  import { sendHeartbeat } from '../../api/devices.uts'
+  import { invalidatePrinterCache } from '../../utils/print-manager.uts'
+  import { ENVS, switchEnv, currentEnvLabel } from '../../utils/config.uts'
+  type MenuItem = {
+    key: string
+    name: string
+    icon: string
+  }
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        envLabel: currentEnvLabel(),
+        user: null as LoginUser | null,
+        summary: null as ReportSummary | null,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        connOk: false,
+        menuOpen: false,
+        menus: [
+          { key: 'tables', name: '桌台', icon: '🪑' },
+          { key: 'order', name: '点餐', icon: '🍽️' },
+          { key: 'confirm', name: '接单', icon: '📋' },
+          { key: 'orders', name: '订单', icon: '📦' },
+          { key: 'print', name: '打印', icon: '🖨️' }
+        ] as MenuItem[]
+      }
+    },
+    computed: {
+      avatarText(): string {
+        return (this.user?.name ?? '').substring(0, 1)
+      },
+      roleLabel(): string {
+        const r = this.user?.role ?? ''
+        if (r == 'boss') return '老板 · 全部权限'
+        if (r == 'cashier') return '收银员'
+        if (r == 'finance') return '财务 · 只读'
+        return r ?? ''
+      },
+      revenueText(): string {
+        return (this.summary?.revenue ?? 0).toFixed(2)
+      }
+    },
+    onLoad() {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+      const raw = uni.getStorageSync('user')
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw as string) as UTSJSONObject
+          if (parsed != null) {
+            this.user = {
+              id: toNum((parsed['id'] ?? '0').toString()),
+              shop_id: toNum((parsed['shop_id'] ?? '0').toString()),
+              phone: (parsed['phone'] ?? '').toString(),
+              name: (parsed['name'] ?? '').toString(),
+              role: (parsed['role'] ?? '').toString(),
+              status: (parsed['status'] ?? '').toString(),
+              shopName: parsed['shopName'] ? (parsed['shopName'] ?? '').toString() : null,
+              shopAddress: parsed['shopAddress'] ? (parsed['shopAddress'] ?? '').toString() : null,
+              shopCreatedAt: parsed['shopCreatedAt'] ? (parsed['shopCreatedAt'] ?? '').toString() : null
+            }
+          }
+        } catch (e) {
+          // 忽略解析失败
+        }
+      }
+    },
+    onShow() {
+      this.refreshStatus()
+      this.envLabel = currentEnvLabel()
+      // 设备心跳：登录后立即上报一次，周期性上报由 App.uvue 定时器负责
+      sendHeartbeat()
+    },
+    methods: {
+      /** 刷新连接状态 + 今日概览 */
+      async refreshStatus() {
+        try {
+          await fetchMe()
+          this.connOk = true
+        } catch (e) {
+          this.connOk = false
+        }
+        try {
+          const s = await fetchToday()
+          this.summary = s
+        } catch (e) {
+          // 概览失败不阻塞页面
+        }
+      },
+      /** 环境切换：从环境清单中选择，立即生效并持久化 */
+      chooseEnv() {
+        this.menuOpen = false
+        const labels: string[] = []
+        for (let i = 0; i < ENVS.length; i++) {
+          labels.push(ENVS[i].label)
+        }
+        uni.showActionSheet({
+          itemList: labels,
+          success: (res) => {
+            const idx = res.tapIndex
+            if (idx >= 0 && idx < ENVS.length) {
+              switchEnv(ENVS[idx].base_url)
+              this.envLabel = currentEnvLabel()
+              uni.showToast({ title: '已切换：' + ENVS[idx].label, icon: 'none' })
+            }
+          },
+          fail: (_e) => {
+            // 用户取消，不做处理
+          }
+        })
+      },
+      /** 功能入口：已接入桌台 / 订单管理，其余逐步实现 */
+      onMenu(key: string) {
+        if (key == 'tables') {
+          uni.navigateTo({ url: '/pages/tables/index' })
+          return
+        }
+        if (key == 'orders') {
+          uni.navigateTo({ url: '/pages/orders/index' })
+          return
+        }
+        if (key == 'confirm') {
+          uni.navigateTo({ url: '/pages/orders/index' })
+          return
+        }
+        if (key == 'order') {
+          uni.navigateTo({ url: '/pages/order/index' })
+          return
+        }
+        if (key == 'print') {
+          uni.navigateTo({ url: '/pages/print/index' })
+          return
+        }
+        uni.showToast({ title: '「' + key + '」功能开发中', icon: 'none' })
+      },
+      logout() {
+        this.menuOpen = false
+        clearToken()
+        uni.removeStorageSync('user')
+        // 清除本地打印机默认缓存，避免切换账号后残留上一账号的默认打印机
+        invalidatePrinterCache()
+        uni.reLaunch({ url: '/pages/login/index' })
+      }
+    }
+  }
+</script>
+
+<style>
+  .home-page {
+    width: 100%;
+    height: 100%;
+    background-color: #f5f6f8;
+  }
+
+  /* 自定义头部 */
+  .header {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .header-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20rpx 32rpx 40rpx;
+  }
+
+  .header-left {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .shop-name {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #ffffff;
+  }
+
+  .sub-text {
+    margin-top: 8rpx;
+    font-size: 24rpx;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .avatar {
+    width: 76rpx;
+    height: 76rpx;
+    border-radius: 50%;
+    background-color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 3rpx solid rgba(255, 255, 255, 0.6);
+  }
+
+  .avatar-text {
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  /* 弹出层遮罩与下拉框 */
+  .pop-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 99;
+  }
+
+  .popover {
+    position: fixed;
+    top: 116rpx;
+    right: 24rpx;
+    z-index: 100;
+    width: 320rpx;
+    background-color: #ffffff;
+    border-radius: 16rpx;
+    box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+  }
+
+  .pop-item {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 28rpx 32rpx;
+  }
+
+  .pop-text {
+    font-size: 30rpx;
+    color: #333333;
+  }
+
+  .pop-divider {
+    height: 1rpx;
+    background-color: #eeeeee;
+  }
+
+  .conn-dot {
+    width: 16rpx;
+    height: 16rpx;
+    border-radius: 50%;
+    margin-right: 16rpx;
+  }
+
+  .conn-on {
+    background-color: #52c41a;
+  }
+
+  .conn-off {
+    background-color: #f5222d;
+  }
+
+  /* 今日营业额（单条） */
+  .revenue-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin: 24rpx 24rpx 0;
+    background-color: #ffffff;
+    border-radius: 20rpx;
+    padding: 36rpx 40rpx;
+    box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+  }
+
+  .revenue-label {
+    font-size: 28rpx;
+    color: #999999;
+  }
+
+  .revenue-value {
+    font-size: 48rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  /* 功能入口 */
+  .menu-grid {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: 32rpx 24rpx;
+  }
+
+  .menu-card {
+    width: 31%;
+    margin-bottom: 20rpx;
+    background-color: #ffffff;
+    border-radius: 20rpx;
+    padding: 48rpx 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-sizing: border-box;
+  }
+
+  .menu-icon {
+    font-size: 60rpx;
+  }
+
+  .menu-name {
+    margin-top: 20rpx;
+    font-size: 30rpx;
+    color: #333333;
+  }
+</style>

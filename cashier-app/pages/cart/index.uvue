@@ -1,0 +1,896 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-back" @click="goBack">
+          <text class="back-icon">←</text>
+        </view>
+        <text class="nav-title">购物车</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+
+    <!-- 桌台信息（桌台模式时显示） -->
+    <view v-if="tableId > 0" class="table-info">
+      <text class="table-info-text">{{ tableName }}<text v-if="guests > 0">（{{ guests }}人）</text></text>
+    </view>
+
+    <!-- 菜品合计 -->
+    <view class="summary-row">
+      <text class="summary-label">菜品合计</text>
+      <view class="summary-right">
+        <text class="summary-amount">¥{{ totalAmount.toFixed(2) }}</text>
+        <text class="summary-count">（共 {{ totalCount }} 份菜品）</text>
+        <text class="summary-clear" @click="clearCart">清空</text>
+      </view>
+    </view>
+
+    <!-- 整单备注 -->
+    <view class="remark-row" @click="editRemark">
+      <text class="remark-label">备注：</text>
+      <text class="remark-value">{{ remark ?? '' }}</text>
+      <text class="remark-arrow">›</text>
+    </view>
+
+    <!-- 购物车菜品列表 -->
+    <scroll-view class="cart-scroll" scroll-y>
+      <view v-if="cartLines.length == 0" class="empty">
+        <text class="empty-label">购物车为空</text>
+      </view>
+      <view
+        v-for="line in cartLines"
+        :key="line.key"
+        class="cart-line"
+        :class="{ 'cart-line-sold': line.dish.sold_out }"
+        @click="openPicker(line)"
+      >
+        <view class="line-info">
+          <view class="line-name-row">
+            <text class="line-name" :class="{ 'line-name-gray': line.dish.sold_out }">{{ line.dish.name }}</text>
+            <text v-if="line.dish.sold_out" class="sold-out-tag">沽清</text>
+          </view>
+          <text v-if="line.spec_name" class="line-spec">{{ line.spec_name }}</text>
+          <text v-if="line.remark.length > 0" class="line-remark">备注: {{ line.remark }}</text>
+        </view>
+        <view class="line-right">
+          <text class="line-price" :class="{ 'line-price-gray': line.dish.sold_out }">¥{{ line.line_price.toFixed(2) }}</text>
+          <view class="line-ops">
+            <view class="btn-minus" @click.stop="minusLine(line)">
+              <text class="btn-minus-text">−</text>
+            </view>
+            <text class="line-qty">{{ line.qty }}</text>
+            <view
+              class="btn-plus"
+              :class="{ 'btn-plus-disabled': line.dish.sold_out }"
+              @click.stop="plusLine(line)"
+            >
+              <text class="btn-plus-text">+</text>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view class="list-bottom-space"></view>
+    </scroll-view>
+
+    <!-- 菜品操作弹窗 -->
+    <view v-if="pickerShow" class="picker-mask" @click="pickerShow = false">
+      <view class="picker-panel" @click.stop="">
+        <view class="picker-dish-title">
+          <text class="picker-dish-name">{{ pickerLine ? pickerLine.dish.name : '' }}</text>
+          <text v-if="pickerLine && pickerLine.spec_name" class="picker-dish-spec">（{{ pickerLine!.spec_name }}）</text>
+        </view>
+        <view class="picker-action" @click="editItemRemark">
+          <text class="picker-action-icon">📝</text>
+          <text class="picker-action-text">{{ pickerRemark.length > 0 ? '修改备注' : '加备注' }}</text>
+        </view>
+        <view class="picker-action picker-action-danger" @click="removeLine">
+          <text class="picker-action-icon">🗑</text>
+          <text class="picker-action-text">删除</text>
+        </view>
+        <view class="picker-close" @click="pickerShow = false">
+          <text class="picker-close-text">取消</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部：两个按钮 -->
+    <view class="bottom-bar">
+      <view class="bottom-left">
+        <text class="bottom-total">¥{{ totalAmount.toFixed(2) }}</text>
+      </view>
+      <view class="bottom-btns">
+        <view class="btn-secondary" :class="{'btn-disabled': submitting || cartLines.length == 0}" @click="submit(false)">
+          <text class="btn-secondary-text">立即下单</text>
+        </view>
+        <view class="btn-primary" :class="{'btn-disabled': submitting || cartLines.length == 0}" @click="submit(true)">
+          <text class="btn-primary-text">{{ submitting ? '处理中...' : (tableId > 0 ? '下单并支付' : '去结账') }}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { fetchMenu, type DishItem } from '../../api/dishes.uts'
+  import { createOrder, addOrderItems, type CreateOrderItem, type CreateOrderDto, type OrderItem } from '../../api/orders.uts'
+  import { toInt } from '../../utils/num.uts'
+
+  /** 购物车条目 */
+  type CartEntry = {
+    key: string
+    qty: number
+  }
+  /** 单品备注条目 */
+  type RemarkEntry = {
+    key: string
+    text: string
+  }
+  /** 购物车行（展示用） */
+  type CartLine = {
+    key: string
+    dish: DishItem
+    spec_index: number
+    spec_name: string | null
+    qty: number
+    line_price: number
+    remark: string
+  }
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        tableId: 0,
+        tableName: '',
+        orderId: 0,
+        guests: 0,
+        dishes: [] as DishItem[],
+        cart: [] as CartEntry[],
+        submitting: false,
+        remark: '',
+        pickerShow: false,
+        pickerLine: null as CartLine | null,
+        pickerRemark: '',
+        remarks: [] as RemarkEntry[]
+      }
+    },
+    computed: {
+      cartLines(): CartLine[] {
+        const lines: CartLine[] = []
+        for (let i = 0; i < this.cart.length; i++) {
+          const entry = this.cart[i]
+          if (entry.qty <= 0) continue
+          const idx = entry.key.indexOf('_')
+          const dishId = toInt(entry.key.substring(0, idx))
+          const specIdx = toInt(entry.key.substring(idx + 1))
+          const dish = this.findDish(dishId)
+          if (dish == null) continue
+          let specName: string | null = null
+          if (specIdx >= 0 && specIdx < dish.specs.length) {
+            specName = dish.specs[specIdx].name
+          }
+          const linePrice = this.linePrice(dish, specIdx)
+          const lineRemark = this.getRemark(entry.key)
+          lines.push({
+            key: entry.key,
+            dish: dish,
+            spec_index: specIdx,
+            spec_name: specName,
+            qty: entry.qty,
+            line_price: linePrice * entry.qty,
+            remark: lineRemark
+          })
+        }
+        return lines
+      },
+      totalCount(): number {
+        let n = 0
+        for (let i = 0; i < this.cart.length; i++) {
+          n += this.cart[i].qty
+        }
+        return n
+      },
+      totalAmount(): number {
+        let amt = 0
+        const lines = this.cartLines
+        for (let i = 0; i < lines.length; i++) {
+          amt += lines[i].line_price
+        }
+        return amt
+      }
+    },
+    onLoad(options: OnLoadOptions) {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+      const tidRaw = parseFloat(options['table_id'] ?? '')
+      this.tableId = isNaN(tidRaw) ? 0 : tidRaw
+      this.tableName = options['table_name'] ?? ''
+      const oidRaw = parseFloat(options['order_id'] ?? '')
+      this.orderId = isNaN(oidRaw) ? 0 : oidRaw
+      const gRaw = parseFloat(options['guests'] ?? '')
+      this.guests = isNaN(gRaw) ? 0 : gRaw
+    },
+    onShow() {
+      this.restoreCart()
+      if (this.dishes.length == 0) {
+        this.loadDishes()
+      }
+    },
+    methods: {
+      async loadDishes() {
+        try {
+          this.dishes = await fetchMenu()
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        }
+      },
+      restoreCart() {
+        const saved = uni.getStorageSync('cashier_cart')
+        if (saved && typeof saved == 'object') {
+          const savedItems = saved as Array<UTSJSONObject>
+          for (let i = 0; i < savedItems.length; i++) {
+            const item = savedItems[i]
+            this.cart.push({
+              key: (item['key'] ?? '').toString(),
+              qty: toInt((item['qty'] ?? 0).toString()),
+            } as CartEntry)
+          }
+        }
+        const savedRemarks = uni.getStorageSync('cashier_cart_remarks')
+        if (savedRemarks && typeof savedRemarks == 'object') {
+          const savedRemarkItems = savedRemarks as Array<UTSJSONObject>
+          for (let i = 0; i < savedRemarkItems.length; i++) {
+            const item = savedRemarkItems[i]
+            this.remarks.push({
+              key: (item['key'] ?? '').toString(),
+              text: (item['text'] ?? '').toString(),
+            } as RemarkEntry)
+          }
+        }
+        const ctx = uni.getStorageSync('cashier_cart_ctx')
+        if (ctx && typeof ctx == 'object') {
+          const c = ctx as UTSJSONObject
+          this.tableId = (c['tableId'] as number) ?? 0
+          this.tableName = (c['tableName'] as string) ?? ''
+          this.orderId = (c['orderId'] as number) ?? 0
+          this.guests = (c['guests'] as number) ?? 0
+        }
+      },
+      persistCart() {
+        uni.setStorageSync('cashier_cart', this.cart)
+        uni.setStorageSync('cashier_cart_remarks', this.remarks)
+        uni.setStorageSync('cashier_cart_ctx', {
+          tableId: this.tableId,
+          tableName: this.tableName,
+          orderId: this.orderId,
+          guests: this.guests
+        })
+      },
+      getRemark(key: string): string {
+        for (let i = 0; i < this.remarks.length; i++) {
+          if (this.remarks[i].key == key) return this.remarks[i].text
+        }
+        return ''
+      },
+      setRemark(key: string, text: string) {
+        for (let i = 0; i < this.remarks.length; i++) {
+          if (this.remarks[i].key == key) {
+            this.remarks[i].text = text
+            return
+          }
+        }
+        this.remarks.push({ key: key, text: text })
+      },
+      findDish(id: number): DishItem | null {
+        for (let i = 0; i < this.dishes.length; i++) {
+          if (this.dishes[i].id == id) return this.dishes[i]
+        }
+        return null
+      },
+      linePrice(d: DishItem, specIndex: number): number {
+        if (specIndex >= 0 && specIndex < d.specs.length) {
+          return d.price + d.specs[specIndex].price_delta
+        }
+        return d.price
+      },
+      minusLine(line: CartLine) {
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key == line.key) {
+            if (this.cart[i].qty <= 1) {
+              this.cart.splice(i, 1)
+            } else {
+              this.cart[i].qty--
+            }
+            break
+          }
+        }
+        this.persistCart()
+      },
+      plusLine(line: CartLine) {
+        if (line.dish.sold_out) {
+          uni.showToast({ title: line.dish.name + ' 已沽清', icon: 'none' })
+          return
+        }
+        let found = false
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key == line.key) {
+            this.cart[i].qty++
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          this.cart.push({ key: line.key, qty: 1 })
+        }
+        this.persistCart()
+      },
+      openPicker(line: CartLine) {
+        this.pickerLine = line
+        this.pickerRemark = line.remark
+        this.pickerShow = true
+      },
+      removeLine() {
+        if (this.pickerLine == null) return
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key == this.pickerLine!.key) {
+            this.cart.splice(i, 1)
+            break
+          }
+        }
+        this.persistCart()
+        this.pickerShow = false
+        this.pickerLine = null
+      },
+      editItemRemark() {
+        if (this.pickerLine == null) return
+        const key = this.pickerLine!.key
+        uni.showModal({
+          title: '菜品备注',
+          editable: true,
+          content: this.getRemark(key),
+          placeholderText: '如：不要香菜 / 少辣',
+          success: (res) => {
+            if (res.confirm) {
+              this.setRemark(key, (res.content ?? '').trim())
+              this.persistCart()
+            }
+            this.pickerShow = false
+            this.pickerLine = null
+          }
+        })
+      },
+      editRemark() {
+        uni.showModal({
+          title: '整单备注',
+          editable: true,
+          content: this.remark,
+          placeholderText: '输入备注信息',
+          success: (res) => {
+            if (res.confirm) {
+              this.remark = res.content ?? ''
+            }
+          }
+        })
+      },
+      clearCart() {
+        if (this.cartLines.length == 0) return
+        uni.showModal({
+          title: '清空购物车',
+          content: '确认清空所有已选菜品？',
+            success: (res) => {
+              if (res.confirm) {
+                this.cart.splice(0, this.cart.length)
+                this.remarks.splice(0, this.remarks.length)
+                this.persistCart()
+              }
+          }
+        })
+      },
+      buildItems(): CreateOrderItem[] {
+        const items: CreateOrderItem[] = []
+        for (let i = 0; i < this.cart.length; i++) {
+          const entry = this.cart[i]
+          if (entry.qty <= 0) continue
+          const idx = entry.key.indexOf('_')
+          const dishId = toInt(entry.key.substring(0, idx))
+          const specIdx = toInt(entry.key.substring(idx + 1))
+          const item: CreateOrderItem = { dish_id: dishId, qty: entry.qty, spec_index: specIdx }
+          const rk = this.getRemark(entry.key)
+          if (rk.length > 0) item.remark = rk
+          items.push(item)
+        }
+        return items
+      },
+      async submit(isSettle: boolean) {
+        if (this.cartLines.length == 0) {
+          uni.showToast({ title: '请先点菜', icon: 'none' })
+          return
+        }
+        if (this.submitting) return
+        this.submitting = true
+        try {
+          const items = this.buildItems()
+          let order: OrderItem
+          if (this.tableId > 0 && this.orderId > 0) {
+            order = await addOrderItems(this.orderId, items)
+          } else if (this.tableId > 0) {
+            const dto: CreateOrderDto = {
+              mode: 'table',
+              table_id: this.tableId,
+              items: items,
+              guests: this.guests,
+              remark: this.remark
+            }
+            order = await createOrder(dto)
+          } else {
+            const dto: CreateOrderDto = {
+              mode: 'ticket',
+              items: items,
+              remark: this.remark
+            }
+            order = await createOrder(dto)
+          }
+          this.cart = [] as CartEntry[]
+          this.remarks = [] as RemarkEntry[]
+          this.persistCart()
+          uni.removeStorageSync('cashier_cart_ctx')
+          if (isSettle) {
+            uni.redirectTo({ url: '/pages/settle/index?order_id=' + order.id.toString() })
+          } else if (this.tableId > 0) {
+            uni.showToast({ title: '下单成功', icon: 'success' })
+            setTimeout(() => {
+              uni.reLaunch({ url: '/pages/tables/index' })
+            }, 800)
+          } else {
+            uni.showToast({ title: '下单成功', icon: 'success' })
+            setTimeout(() => {
+              uni.reLaunch({ url: '/pages/home/index' })
+            }, 800)
+          }
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        } finally {
+          this.submitting = false
+        }
+      },
+      goBack() {
+        this.persistCart()
+        uni.navigateBack()
+      },
+      goCheckout() {
+        this.submit(this.tableId > 0)
+      }
+    }
+  }
+</script>
+
+<style>
+  .page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f6f8;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .nav-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 88rpx;
+    padding: 0 24rpx;
+  }
+
+  .nav-back {
+    width: 80rpx;
+    height: 60rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .back-icon {
+    font-size: 44rpx;
+    color: #ffffff;
+  }
+
+  .nav-title {
+    flex: 1;
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+  }
+
+  .nav-right {
+    width: 80rpx;
+  }
+
+  /* 桌台信息 */
+  .table-info {
+    padding: 20rpx 24rpx;
+    background-color: #ffffff;
+  }
+
+  .table-info-text {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  /* 合计行 */
+  .summary-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24rpx;
+    background-color: #ffffff;
+    margin-top: 16rpx;
+  }
+
+  .summary-label {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .summary-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .summary-amount {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #ff6a00;
+    margin-right: 8rpx;
+  }
+
+  .summary-count {
+    font-size: 24rpx;
+    color: #999999;
+    margin-right: 16rpx;
+  }
+
+  .summary-clear {
+    font-size: 26rpx;
+    color: #ff6a00;
+  }
+
+  /* 菜品列表 */
+  .cart-scroll {
+    flex: 1;
+    min-height: 0;
+    background-color: #ffffff;
+    margin-top: 16rpx;
+  }
+
+  .cart-line {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 28rpx 24rpx;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+  }
+
+  .cart-line-sold {
+    opacity: 0.6;
+  }
+
+  .remark-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 18rpx 24rpx;
+    background-color: #ffffff;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+  }
+
+  .remark-label {
+    font-size: 26rpx;
+    color: #999999;
+  }
+
+  .remark-value {
+    flex: 1;
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .remark-arrow {
+    font-size: 30rpx;
+    color: #cccccc;
+  }
+
+  .line-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .line-name-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .line-name {
+    font-size: 28rpx;
+    color: #333333;
+    font-weight: bold;
+  }
+
+  .line-name-gray {
+    color: #999999;
+  }
+
+  .sold-out-tag {
+    margin-left: 10rpx;
+    font-size: 20rpx;
+    color: #ffffff;
+    background-color: #cccccc;
+    padding: 2rpx 10rpx;
+    border-radius: 4rpx;
+  }
+
+  .line-spec {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  .line-remark {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    color: #ff6a00;
+  }
+
+  .line-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+
+  .line-price {
+    font-size: 28rpx;
+    color: #ff6a00;
+    font-weight: bold;
+    margin-bottom: 12rpx;
+  }
+
+  .line-price-gray {
+    color: #cccccc;
+  }
+
+  .line-ops {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .btn-plus {
+    width: 48rpx;
+    height: 48rpx;
+    border-radius: 50%;
+    background-color: #ff6a00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-plus-text {
+    font-size: 30rpx;
+    color: #ffffff;
+    font-weight: bold;
+    margin-top: -4rpx;
+  }
+
+  .btn-plus-disabled {
+    background-color: #cccccc;
+  }
+
+  .btn-minus {
+    width: 44rpx;
+    height: 44rpx;
+    border-radius: 50%;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: #cccccc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-minus-text {
+    font-size: 28rpx;
+    color: #999999;
+    margin-top: -4rpx;
+  }
+
+  .line-qty {
+    min-width: 40rpx;
+    text-align: center;
+    font-size: 28rpx;
+    color: #333333;
+    margin: 0 12rpx;
+  }
+
+  .list-bottom-space {
+    height: 160rpx;
+  }
+
+  .empty {
+    padding: 120rpx 0;
+    text-align: center;
+  }
+
+  .empty-label {
+    font-size: 28rpx;
+    color: #bbbbbb;
+  }
+
+  /* 底部栏 */
+  .bottom-bar {
+    height: 130rpx;
+    background-color: #ffffff;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #eeeeee;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 24rpx;
+  }
+
+  .bottom-left {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .bottom-total {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .bottom-btns {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .btn-secondary {
+    height: 72rpx;
+    padding: 0 32rpx;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: #ff6a00;
+    border-radius: 36rpx;
+    margin-right: 16rpx;
+    display: flex;
+    align-items: center;
+  }
+
+  .btn-secondary-text {
+    font-size: 26rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .btn-primary {
+    height: 72rpx;
+    padding: 0 40rpx;
+    background-color: #ff6a00;
+    border-radius: 36rpx;
+    display: flex;
+    align-items: center;
+  }
+
+  .btn-primary-text {
+    font-size: 26rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+
+  .btn-disabled {
+    opacity: 0.5;
+  }
+
+  /* 菜品操作弹窗 */
+  .picker-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .picker-panel {
+    width: 100%;
+    background-color: #ffffff;
+    border-top-left-radius: 24rpx;
+    border-top-right-radius: 24rpx;
+    padding: 24rpx 24rpx 40rpx;
+  }
+
+  .picker-dish-title {
+    padding: 20rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .picker-dish-name {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .picker-dish-spec {
+    font-size: 24rpx;
+    color: #999999;
+    margin-left: 6rpx;
+  }
+
+  .picker-action {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 28rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f5f5f5;
+  }
+
+  .picker-action-danger {
+    border-bottom-width: 0rpx;
+  }
+
+  .picker-action-danger .picker-action-text {
+    color: #f5222d;
+  }
+
+  .picker-action-icon {
+    font-size: 32rpx;
+    margin-right: 16rpx;
+  }
+
+  .picker-action-text {
+    font-size: 28rpx;
+    color: #ff4d4f;
+  }
+
+  .picker-close {
+    margin-top: 16rpx;
+    padding: 24rpx;
+    background-color: #f5f5f5;
+    border-radius: 12rpx;
+    text-align: center;
+  }
+
+  .picker-close-text {
+    font-size: 28rpx;
+    color: #666666;
+  }
+</style>

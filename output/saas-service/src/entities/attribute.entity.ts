@@ -7,8 +7,8 @@ import {
 } from 'typeorm';
 
 /**
- * 菜品属性（规格 / 做法 / 单位）
- * kind: spec=规格, method=做法, unit=单位
+ * 菜品属性（规格 / 做法 / 单位 / 加料 / 餐盒 / 标签）
+ * kind: spec=规格, method=做法, unit=单位, topping=加料, box=餐盒, tag=标签
  */
 @Entity('attributes')
 @Index('idx_attributes_shop_kind', ['shop_id', 'kind'])
@@ -19,7 +19,7 @@ export class Attribute {
   @Column({ type: 'integer' })
   shop_id: number;
 
-  /** 属性类型：spec / method / unit */
+  /** 属性类型：spec / method / unit / topping / box / tag */
   @Column({ type: 'varchar', length: 16 })
   kind: string;
 

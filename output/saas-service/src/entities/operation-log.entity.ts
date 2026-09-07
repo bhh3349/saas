@@ -1,7 +1,8 @@
-import {
+﻿import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
@@ -17,13 +18,16 @@ export enum SensitiveAction {
   FreeOrder = 'free_order',
   /** 优惠券核销 */
   Voucher = 'voucher',
+  /** 重新结账 / 清空记账 */
+  ReopenOrder = 'reopen_order',
 }
 
 /**
  * 敏感操作日志
- * 记录：改价 / 退菜 / 作废订单 / 免单 / 优惠券核销。
+ * 记录：改价 / 退菜 / 作废订单 / 免单 / 优惠券核销 / 重新结账。
  */
 @Entity('operation_logs')
+@Index('idx_operation_logs_shop_created', ['shop_id', 'created_at'])
 export class OperationLog {
   @PrimaryGeneratedColumn()
   id: number;
@@ -39,8 +43,8 @@ export class OperationLog {
   @Column({ type: 'varchar', length: 32 })
   user_name: string;
 
-  /** 操作类型：price_change / refund / void_order / free_order / voucher */
-  @Column({ type: 'varchar', length: 24 })
+  /** 操作类型：price_change / refund / void_order / free_order / voucher / reopen_order */
+  @Column({ type: 'varchar', length: 32 })
   action: string;
 
   /** 目标类型：order / table / dish */
@@ -51,8 +55,8 @@ export class OperationLog {
   @Column({ type: 'integer', nullable: true })
   target_id: number | null;
 
-  /** 涉及金额（分，如优惠 / 退款 / 免单金额） */
-  @Column({ type: 'integer', default: 0 })
+  /** 涉及金额（元，如优惠 / 退款 / 免单金额） */
+  @Column({ type: 'real', default: 0 })
   amount: number;
 
   /** 详情描述（如「优惠券核销-满100减10」） */

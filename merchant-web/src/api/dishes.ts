@@ -18,6 +18,15 @@ export interface DishItem {
   spec_code: string
   /** 普通菜 / 称重菜 */
   type: string
+  unit: string
+  serve_mode: string
+  print_enable: boolean
+  print_dept: string
+  temp_price_change: boolean
+  manual_discount: boolean
+  min_amount: number
+  delta_amount: number
+  fractional: boolean
   sort_order: number
   status: string
   sold_out: boolean
@@ -38,6 +47,15 @@ export interface DishPayload {
   code?: string
   spec_code?: string
   type?: string
+  unit?: string
+  serve_mode?: string
+  print_enable?: boolean
+  print_dept?: string
+  temp_price_change?: boolean
+  manual_discount?: boolean
+  min_amount?: number
+  delta_amount?: number
+  fractional?: boolean
   sort_order?: number
 }
 

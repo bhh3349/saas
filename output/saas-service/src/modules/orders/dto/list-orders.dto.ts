@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { OrderStatus } from '../../../common/enums';
 
 export class ListOrdersDto {
@@ -7,6 +7,16 @@ export class ListOrdersDto {
   @IsOptional()
   @IsIn(Object.values(OrderStatus))
   status?: string;
+
+  /** 起始日期（含，YYYY-MM-DD），用于今日/日期范围筛选 */
+  @IsOptional()
+  @IsDateString()
+  start_date?: string;
+
+  /** 结束日期（含，YYYY-MM-DD） */
+  @IsOptional()
+  @IsDateString()
+  end_date?: string;
 
   @IsOptional()
   @Type(() => Number)

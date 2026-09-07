@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Dish } from '../../entities/dish.entity';
 import { OrderRefund } from '../../entities/order-refund.entity';
 import { Setmeal } from '../../entities/setmeal.entity';
+import { OperationLog } from '../../entities/operation-log.entity';
 import { AdminDishesController, DishesMenuController } from './dishes.controller';
 import { DishesService } from './dishes.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Dish, Setmeal, OrderRefund])],
+imports: [TypeOrmModule.forFeature([Dish, Setmeal, OrderRefund, OperationLog])],
   controllers: [AdminDishesController, DishesMenuController],
   providers: [DishesService],
 })

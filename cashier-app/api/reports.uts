@@ -1,0 +1,54 @@
+/**
+ * 报表接口：今日概览
+ */
+import { request } from '../utils/request.uts'
+import { toInt, toNum } from '../utils/num.uts'
+
+/** 按结账方式汇总 */
+export type MethodSummary = {
+  name: string
+  order_count: number
+  /** 实收金额（元） */
+  amount: number
+}
+
+/** 区间营业汇总（/reports/today 与 /reports/summary 同构） */
+export type ReportSummary = {
+  from: string
+  to: string
+  /** 已结账订单数 */
+  order_count: number
+  /** 营业额 = 已结账实收之和（元） */
+  revenue: number
+  /** 挂账待收（元） */
+  pending_receivable: number
+  /** 按结账方式汇总 */
+  methods: MethodSummary[]
+}
+
+/** 今日概览 */
+export function fetchToday(): Promise<ReportSummary> {
+  return request<UTSJSONObject>({
+    url: '/reports/today',
+    method: 'GET',
+  }).then((raw): ReportSummary => {
+    const methodsData = raw['methods'] as Array<UTSJSONObject> ?? []
+    const methods: MethodSummary[] = []
+    for (let i = 0; i < methodsData.length; i++) {
+      const item = methodsData[i]
+      methods.push({
+        name: (item['name'] ?? '').toString(),
+        order_count: toInt((item['order_count'] ?? 0).toString()),
+        amount: toNum((item['amount'] ?? 0).toString()),
+      } as MethodSummary)
+    }
+    return {
+      from: (raw['from'] ?? '').toString(),
+      to: (raw['to'] ?? '').toString(),
+      order_count: toInt((raw['order_count'] ?? 0).toString()),
+      revenue: toNum((raw['revenue'] ?? 0).toString()),
+      pending_receivable: toNum((raw['pending_receivable'] ?? 0).toString()),
+      methods: methods,
+    } as ReportSummary
+  })
+}

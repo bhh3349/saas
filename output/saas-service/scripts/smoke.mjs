@@ -150,8 +150,12 @@ function randomPhone() {
 async function main() {
   console.log('=== B1 saas-service smoke ===');
 
-  // 1. 拉起服务
-  await ensureService(3100, PLATFORM_DIR, { PORT: '3100', SEED_OPERATOR_PASSWORD: 'admin123456' });
+  // 1. 拉起服务（platform 清库重建，需 DB_SYNC=true 自动建表；生产走 migration 不受影响）
+  await ensureService(3100, PLATFORM_DIR, {
+    PORT: '3100',
+    SEED_OPERATOR_PASSWORD: 'admin123456',
+    DB_SYNC: 'true',
+  });
   await ensureService(3200, SAAS_DIR, {
     PORT: '3200',
     PLATFORM_INTERNAL_BASE_URL: PLATFORM_URL,
@@ -573,6 +577,156 @@ async function main() {
 
   const todayB = await api(SAAS_URL, 'GET', '/reports/today', { token: tokenB });
   check('B 店看账为空（隔离）', todayB.body?.data?.order_count === 0 && todayB.body?.data?.revenue === 0, JSON.stringify(todayB.body?.data));
+
+  // 22. 设备监控：收银端心跳自动登记 → 商家后台只读列表
+  const hb1 = await api(SAAS_URL, 'POST', '/devices/heartbeat', {
+    token: tokenCashier,
+    body: { device_id: 'pos-smoke-001', name: '前台收银机1号', type: 'POS', os: 'android 13', app_version: '1.0.0' },
+  });
+  check(
+    '收银端心跳上报成功（自动登记）',
+    hb1.body?.code === 0 && hb1.body?.data?.device_id === 'pos-smoke-001' && !!hb1.body?.data?.last_seen_at,
+    JSON.stringify(hb1.body),
+  );
+
+  const hb2 = await api(SAAS_URL, 'POST', '/devices/heartbeat', {
+    token: tokenA,
+    body: { device_id: 'pos-smoke-001', name: '前台收银机1号', type: 'POS' },
+  });
+  check('同一设备重复心跳幂等（老板账号也允许上报）', hb2.body?.code === 0, JSON.stringify(hb2.body));
+
+  const hbBad = await api(SAAS_URL, 'POST', '/devices/heartbeat', {
+    token: tokenCashier,
+    body: { type: 'POS' },
+  });
+  check('缺少 device_id 心跳被拒', hbBad.body?.code !== 0, JSON.stringify(hbBad.body));
+
+  const hbBType = await api(SAAS_URL, 'POST', '/devices/heartbeat', {
+    token: tokenCashier,
+    body: { device_id: 'pos-smoke-002', type: 'Microwave' },
+  });
+  check('非法设备类型心跳被拒', hbBType.body?.code !== 0, JSON.stringify(hbBType.body));
+
+  const devicesA = await api(SAAS_URL, 'GET', '/admin/devices', { token: tokenA });
+  const devA = (devicesA.body?.data || []).find((d) => d.device_id === 'pos-smoke-001');
+  check(
+    '商家后台设备列表（老板可见且在线）',
+    devicesA.body?.code === 0 && !!devA && devA.is_online === true && devA.name === '前台收银机1号',
+    JSON.stringify(devicesA.body?.data),
+  );
+
+  const finDevices = await api(SAAS_URL, 'GET', '/admin/devices', { token: tokenFinance });
+  check('财务不可查看设备列表 403', finDevices.status === 403, `status=${finDevices.status}`);
+
+  const cashierDevices = await api(SAAS_URL, 'GET', '/admin/devices', { token: tokenCashier });
+  check('收银员不可查看设备列表 403', cashierDevices.status === 403, `status=${cashierDevices.status}`);
+
+  const hbB = await api(SAAS_URL, 'POST', '/devices/heartbeat', {
+    token: tokenB,
+    body: { device_id: 'pos-shop-b-001', type: 'POS' },
+  });
+  check('B 店设备心跳成功', hbB.body?.code === 0, JSON.stringify(hbB.body));
+
+  const devicesB = await api(SAAS_URL, 'GET', '/admin/devices', { token: tokenB });
+  const devBIds = (devicesB.body?.data || []).map((d) => d.device_id);
+  check(
+    'B 店看不到 A 店设备（多租户隔离）',
+    devicesB.body?.code === 0 && devBIds.includes('pos-shop-b-001') && !devBIds.includes('pos-smoke-001'),
+    JSON.stringify(devBIds),
+  );
+
+  // 23. 票据样式：老板写入 print-style 桶 → 收银员可读（打印结账单用）→ 财务 403
+  const putStyle = await api(SAAS_URL, 'PUT', '/admin/buckets/print-style', {
+    token: tokenA,
+    body: { data: { 结账单: { fontSize: 'large', footerText: '谢谢惠顾，欢迎再次光临' } } },
+  });
+  check('老板写入票据样式配置桶', putStyle.body?.code === 0, JSON.stringify(putStyle.body));
+
+  const cashierStyle = await api(SAAS_URL, 'GET', '/admin/buckets/print-style', { token: tokenCashier });
+  check(
+    '收银员可读票据样式（结账单配置）',
+    cashierStyle.body?.code === 0 && cashierStyle.body?.data?.data?.['结账单']?.fontSize === 'large',
+    JSON.stringify(cashierStyle.body),
+  );
+
+  const finStyle = await api(SAAS_URL, 'GET', '/admin/buckets/print-style', { token: tokenFinance });
+  check('财务不可读票据样式 403', finStyle.status === 403, `status=${finStyle.status}`);
+
+  // 24. 菜品备注：下单带备注 → 详情返回；同菜不同备注分行；加菜带备注不合并
+  const orderRemark = await api(SAAS_URL, 'POST', '/orders', {
+    token: tokenA,
+    body: {
+      mode: 'ticket',
+      items: [
+        { dish_id: dish2Id, qty: 2, remark: '不要香菜' },
+        { dish_id: dish2Id, qty: 1 },
+      ],
+    },
+  });
+  check('下单带单品备注成功', orderRemark.body?.code === 0, JSON.stringify(orderRemark.body));
+  const orderRemarkId = orderRemark.body?.data?.id;
+  const orderRemarkDetail = await api(SAAS_URL, 'GET', `/orders/${orderRemarkId}`, { token: tokenA });
+  const remarkItems = orderRemarkDetail.body?.data?.items || [];
+  check(
+    '订单详情返回单品备注（同菜不同备注分行）',
+    remarkItems.length === 2 && remarkItems[0]?.remark === '不要香菜' && !remarkItems[1]?.remark,
+    JSON.stringify(remarkItems),
+  );
+
+  const addRemark = await api(SAAS_URL, 'POST', `/orders/${orderRemarkId}/items`, {
+    token: tokenA,
+    body: { items: [{ dish_id: dish2Id, qty: 1, remark: '多辣' }] },
+  });
+  const addRemarkItems = addRemark.body?.data?.items || [];
+  check(
+    '加菜带备注生成新行（不与无备注合并）',
+    addRemark.body?.code === 0 && addRemarkItems.length === 3,
+    JSON.stringify(addRemarkItems),
+  );
+
+  // 25. 撤单：confirmed 整单取消 → void + 桌台释放
+  const orderCancel = await api(SAAS_URL, 'POST', '/orders', {
+    token: tokenA,
+    body: { mode: 'table', table_id: table1.id, items: [{ dish_id: dish2Id, qty: 1 }] },
+  });
+  check('撤单测试单创建', orderCancel.body?.code === 0 && orderCancel.body?.data?.status === 'pending', JSON.stringify(orderCancel.body?.data));
+  const orderCancelId = orderCancel.body?.data?.id;
+  await api(SAAS_URL, 'POST', `/orders/${orderCancelId}/confirm`, { token: tokenA });
+  const tablesBeforeCancel = await api(SAAS_URL, 'GET', '/tables', { token: tokenA });
+  check('撤单前桌台占用', (tablesBeforeCancel.body?.data || []).find((t) => t.id === table1.id)?.status === 'occupied');
+  const cancelIt = await api(SAAS_URL, 'POST', `/orders/${orderCancelId}/reject`, { token: tokenA });
+  check('confirmed 订单撤单成功', cancelIt.body?.code === 0 && cancelIt.body?.data?.status === 'void', JSON.stringify(cancelIt.body));
+  const tablesAfterCancel = await api(SAAS_URL, 'GET', '/tables', { token: tokenA });
+  check('撤单后桌台释放', (tablesAfterCancel.body?.data || []).find((t) => t.id === table1.id)?.status === 'idle');
+
+  // 26. 退菜（部分退扣金额）+ 结账带整单打折
+  const orderRefund = await api(SAAS_URL, 'POST', '/orders', {
+    token: tokenA,
+    body: { mode: 'ticket', items: [{ dish_id: dishId, spec_index: 0, qty: 2 }] },
+  });
+  const orderRefundId = orderRefund.body?.data?.id;
+  check('退菜测试单创建（大份×2 = 67 元）', orderRefund.body?.code === 0 && orderRefund.body?.data?.total_amount === 67, JSON.stringify(orderRefund.body?.data));
+  const refundIt = await api(SAAS_URL, 'POST', `/orders/${orderRefundId}/refund`, {
+    token: tokenA,
+    body: { items: [{ dish_id: dishId, spec_name: '大份', qty: 1, reason: '错点' }], reason: '错点' },
+  });
+  check(
+    '退菜 1 份后金额扣减（67 → 33.5）',
+    refundIt.body?.code === 0 && refundIt.body?.data?.total_amount === 33.5 && refundIt.body?.data?.items?.[0]?.qty === 1,
+    JSON.stringify(refundIt.body?.data),
+  );
+
+  const paysA2 = await api(SAAS_URL, 'GET', '/payments', { token: tokenA });
+  const cashPay2 = (paysA2.body?.data || []).find((p) => p.name === '现金');
+  const settleDiscount = await api(SAAS_URL, 'POST', `/orders/${orderRefundId}/settle`, {
+    token: tokenA,
+    body: { payment_method_id: cashPay2.id, discount_amount: 3.35, discount_type: 'discount', discount_name: '手动9折' },
+  });
+  check(
+    '结账带整单打折（33.5 - 3.35 = 30.15）',
+    settleDiscount.body?.code === 0 && settleDiscount.body?.data?.discount_type === 'discount' && settleDiscount.body?.data?.discount_name === '手动9折' && settleDiscount.body?.data?.paid_amount === 30.15,
+    JSON.stringify(settleDiscount.body?.data),
+  );
 
   // 必须先杀掉拉起服务的子进程，否则 npm run smoke 永不退出（stdio pipe 保持事件循环活跃）
   await stopStartedServices();

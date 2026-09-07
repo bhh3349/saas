@@ -146,7 +146,7 @@ export default function ReportHome({ onNavigate }: ReportHomeProps) {
         <StatCard label="桌台使用率" value={`${usage.toFixed(0)}%`} loading={loading} sub={`${usedTables}/${tableTotal} 桌有单`} />
       </div>
 
-      <div className="home-split" style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
+      <div className="home-split" style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 16 }}>
           <section className="panel">
             <div className="panel-head">
@@ -169,28 +169,28 @@ export default function ReportHome({ onNavigate }: ReportHomeProps) {
             </div>
           </section>
 
-          <section className="panel" style={{ flex: 1, minHeight: 0 }}>
+          <section className="panel">
             <div className="panel-head">
               <div className="panel-title">收入构成</div>
               {methods.length > 0 && <div className="panel-more">按结账方式</div>}
             </div>
-            <div className="panel-body report-chart">
+            <div className="panel-body">
               {methods.length === 0 ? (
                 <EmptyState title="暂无数据" />
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18, maxWidth: 560, padding: '8px 4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 22, padding: '12px 4px' }}>
                   {methods.map((m) => {
                     const pct = totalAmount > 0 ? (m.amount / totalAmount) * 100 : 0;
                     return (
                       <div key={m.name}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
-                          <span>{m.name}</span>
-                          <span style={{ color: 'var(--color-text-2)' }}>
-                            {m.order_count} 单 · ¥{m.amount.toFixed(2)} · {pct.toFixed(1)}%
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, fontSize: 14 }}>
+                          <span style={{ fontWeight: 500 }}>{m.name}</span>
+                          <span style={{ color: 'var(--color-text-2)', fontSize: 13 }}>
+                            {m.order_count} 单 · ¥{m.amount.toFixed(2)} · <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>{pct.toFixed(1)}%</span>
                           </span>
                         </div>
-                        <div style={{ height: 10, borderRadius: 5, background: 'var(--color-surface3)', overflow: 'hidden' }}>
-                          <div style={{ height: '100%', borderRadius: 5, background: 'var(--color-primary)', width: `${pct}%` }} />
+                        <div style={{ height: 12, borderRadius: 6, background: 'var(--color-surface3)', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', borderRadius: 6, background: 'var(--color-primary)', width: `${pct}%`, transition: 'width 0.4s ease' }} />
                         </div>
                       </div>
                     );
@@ -207,6 +207,17 @@ export default function ReportHome({ onNavigate }: ReportHomeProps) {
           </div>
           <div className="panel-body">
             <div className="quick-grid">
+              {favEntries.length === 0 && (
+                <div
+                  className="quick-item quick-add"
+                  title="点击页面右上角 ★，收藏常用页面到首页快捷入口"
+                >
+                  <div className="quick-tile add">
+                    <Icon name="star" className="quick-add-icon" />
+                  </div>
+                  <span className="quick-label">添加快捷页</span>
+                </div>
+              )}
               {[...favEntries, ...QUICK_ENTRIES.map((q) => ({ ...q, fav: false }))].map((entry) => (
                 <div
                   key={entry.key}

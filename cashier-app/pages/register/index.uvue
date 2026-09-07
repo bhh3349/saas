@@ -1,0 +1,171 @@
+<template>
+  <view class="register-page">
+    <view class="form">
+      <input
+        class="input"
+        type="text"
+        v-model="code"
+        placeholder="激活码（12 位）"
+        :maxlength="20"
+      />
+      <input
+        class="input"
+        type="text"
+        v-model="shop_name"
+        placeholder="店铺名称"
+      />
+      <input
+        class="input"
+        type="text"
+        v-model="shop_address"
+        placeholder="店铺地址（可选）"
+      />
+      <input
+        class="input"
+        type="text"
+        v-model="name"
+        placeholder="老板姓名（可选）"
+      />
+      <input
+        class="input"
+        type="tel"
+        v-model="phone"
+        placeholder="登录手机号"
+        :maxlength="11"
+      />
+      <input
+        class="input"
+        type="password"
+        v-model="password"
+        placeholder="登录密码（至少 6 位）"
+      />
+      <button class="submit-btn" :class="loading ? 'submit-btn-disabled' : ''" :disabled="loading" @click="onRegister">
+        {{ loading ? '注册中…' : '注册并开店' }}
+      </button>
+      <text v-if="error" class="error">{{ error }}</text>
+
+      <view class="tip">
+        <text class="tip-text">激活码由平台方提供，注册成功后自动创建老板账号</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { register } from '../../api/auth.uts'
+
+  export default {
+    data() {
+      return {
+        code: '',
+        shop_name: '',
+        shop_address: '',
+        name: '',
+        phone: '',
+        password: '',
+        loading: false,
+        error: ''
+      }
+    },
+    methods: {
+      async onRegister() {
+        this.error = ''
+        if (this.code == '' || this.code.length != 12) {
+          this.error = '请输入正确的 12 位激活码'
+          return
+        }
+        if (this.shop_name == '') {
+          this.error = '请输入店铺名称'
+          return
+        }
+        if (this.phone == '' || this.phone.length != 11) {
+          this.error = '请输入正确的手机号'
+          return
+        }
+        if (this.password == '' || this.password.length < 6) {
+          this.error = '密码至少 6 位'
+          return
+        }
+        this.loading = true
+        try {
+          await register({
+            code: this.code,
+            phone: this.phone,
+            password: this.password,
+            shop_name: this.shop_name,
+            shop_address: this.shop_address,
+            name: this.name
+          })
+          uni.showToast({ title: '注册成功，请登录', icon: 'none' })
+          setTimeout(() => {
+            uni.navigateBack()
+          }, 1200)
+        } catch (e) {
+          this.error = (e.message as string) ?? ''
+        } finally {
+          this.loading = false
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  .register-page {
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+    padding: 80rpx 40rpx;
+    box-sizing: border-box;
+  }
+
+  .form {
+    width: 100%;
+  }
+
+  .input {
+    width: 100%;
+    height: 100rpx;
+    padding: 0 32rpx;
+    box-sizing: border-box;
+    background-color: #f5f6f8;
+    border-radius: 16rpx;
+    font-size: 32rpx;
+    color: #333333;
+    margin-bottom: 32rpx;
+  }
+
+  .submit-btn {
+    width: 100%;
+    height: 96rpx;
+    line-height: 96rpx;
+    margin-top: 16rpx;
+    background-color: #ff6a00;
+    color: #ffffff;
+    font-size: 36rpx;
+    border-radius: 16rpx;
+    border: none;
+  }
+
+  .submit-btn-disabled {
+    opacity: 0.6;
+  }
+
+  .error {
+    display: flex;
+    margin-top: 24rpx;
+    font-size: 26rpx;
+    color: #f5222d;
+    text-align: center;
+  }
+
+  .tip {
+    margin-top: 32rpx;
+    text-align: center;
+  }
+
+  .tip-text {
+    font-size: 26rpx;
+    color: #999999;
+  }
+</style>

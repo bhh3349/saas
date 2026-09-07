@@ -343,7 +343,12 @@ export default function StallManage() {
     getBucket<Stall[]>(BUCKET_KEY)
       .then((data) => {
         if (!active) return;
-        setStalls(Array.isArray(data) && data.length > 0 ? data : DEFAULT_STALLS);
+        if (Array.isArray(data) && data.length > 0) {
+          setStalls(data);
+          return;
+        }
+        setStalls(DEFAULT_STALLS);
+        return putBucket(BUCKET_KEY, DEFAULT_STALLS);
       })
       .catch(() => {
         if (active) setStalls(DEFAULT_STALLS);

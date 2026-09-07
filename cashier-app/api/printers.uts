@@ -1,0 +1,70 @@
+/**
+ * 打印机接口
+ */
+import { request } from '../utils/request.uts'
+
+export type PrinterItem = {
+  id: number
+  name: string
+  type: string // bluetooth | wifi
+  address: string
+  port: number
+  brand: string
+  width_mm: number
+  is_default: boolean
+  remark: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export type CreatePrinterInput = {
+  name: string
+  type: string
+  address: string
+  port?: number
+  brand?: string
+  width_mm?: number
+  is_default?: boolean
+  remark?: string
+  enabled?: boolean
+}
+
+/** 列出本店全部打印机 */
+export function fetchPrinters(): Promise<PrinterItem[]> {
+  return request<PrinterItem[]>({ url: '/printers', method: 'GET' })
+}
+
+/** 新增打印机 */
+export function createPrinter(dto: CreatePrinterInput): Promise<PrinterItem> {
+  return request<PrinterItem>({
+    url: '/printers',
+    method: 'POST',
+    data: dto,
+  })
+}
+
+/** 修改打印机 */
+export function updatePrinter(id: number, dto: Partial<CreatePrinterInput>): Promise<PrinterItem> {
+  return request<PrinterItem>({
+    url: '/printers/' + id.toString(),
+    method: 'PUT',
+    data: dto,
+  })
+}
+
+/** 删除打印机 */
+export function deletePrinter(id: number): Promise<void> {
+  return request<void>({
+    url: '/printers/' + id.toString(),
+    method: 'DELETE',
+  })
+}
+
+/** 设为默认打印机（单选） */
+export function setDefaultPrinter(id: number): Promise<void> {
+  return request<void>({
+    url: '/printers/' + id.toString() + '/default',
+    method: 'POST',
+  })
+}

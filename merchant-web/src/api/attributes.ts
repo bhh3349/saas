@@ -1,9 +1,9 @@
 import { request } from './http'
 
-/** 属性条目（规格/做法/单位） */
+/** 属性条目（规格/做法/单位/加料/餐盒/标签） */
 export interface AttributeItem {
   id: number
-  kind: 'spec' | 'method' | 'unit'
+  kind: 'spec' | 'method' | 'unit' | 'topping' | 'box' | 'tag'
   name: string
   preset: boolean
   sort_order: number
@@ -11,7 +11,7 @@ export interface AttributeItem {
 }
 
 export interface AttributePayload {
-  kind: 'spec' | 'method' | 'unit'
+  kind: 'spec' | 'method' | 'unit' | 'topping' | 'box' | 'tag'
   name: string
   preset?: boolean
   sort_order?: number

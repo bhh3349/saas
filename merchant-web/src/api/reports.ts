@@ -362,6 +362,9 @@ export function fetchSensitiveDetail(params: {
   to?: string;
   page?: number;
   page_size?: number;
+  /** 敏感操作类型筛选（price_change / refund / void_order / free_order / voucher / reopen_order） */
+  action?: string;
+  /** 关键字（模糊匹配操作人 / 操作类型 / 详情 / 目标ID） */
   keyword?: string;
 }): Promise<SensitiveDetailResult> {
   return request<SensitiveDetailResult>(`/reports/sensitive-detail${qs(params)}`);

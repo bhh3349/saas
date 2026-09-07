@@ -1,0 +1,352 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-home" @click="goHome">
+          <text class="home-icon">⌂</text>
+          <text class="home-text">首页</text>
+        </view>
+        <text class="nav-title">打印管理</text>
+        <view class="nav-home" @click="goAdd">
+          <text class="home-icon">+</text>
+          <text class="home-text">添加</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 说明条 -->
+    <view class="tip-bar">
+      <text class="tip-text">打印经串行队列发送，失败自动重试；蓝牙连接会自动申请「附近设备」权限。</text>
+    </view>
+
+    <!-- 空态 -->
+    <view v-if="printers.length == 0" class="empty">
+      <text class="empty-icon">🖨️</text>
+      <text class="empty-title">还没有打印机</text>
+      <text class="empty-hint">点击右上角「添加」配置第一台打印机</text>
+      <view class="empty-btn" @click="goAdd">
+        <text class="empty-btn-text">立即添加</text>
+      </view>
+    </view>
+
+    <!-- 打印机列表 -->
+    <view v-for="p in printers" :key="p.id" class="printer-card">
+      <view class="card-head">
+        <view class="icon-wrap" :class="'icon-' + p.type">
+          <text class="icon-text">{{ p.type == 'bluetooth' ? 'B' : 'W' }}</text>
+        </view>
+        <view class="head-info">
+          <view class="name-row">
+            <text class="name">{{ p.name }}</text>
+            <view v-if="p.is_default" class="default-tag">
+              <text class="default-text">默认</text>
+            </view>
+          </view>
+          <text class="type-label">{{ p.type == 'bluetooth' ? '蓝牙' : 'WiFi' }} · {{ p.width_mm }}mm</text>
+        </view>
+      </view>
+
+      <view class="card-body">
+        <text class="addr-label">{{ p.type == 'bluetooth' ? 'MAC' : 'IP' }}: {{ p.address }}</text>
+        <text v-if="p.type == 'wifi'" class="addr-label">:{{ p.port }}</text>
+        <text v-if="p.brand" class="addr-label">品牌: {{ p.brand }}</text>
+        <text v-if="p.remark" class="addr-label">备注: {{ p.remark }}</text>
+      </view>
+
+      <view class="card-actions">
+        <view class="action-btn" @click="testPrint(p)">
+          <text class="action-text">测试打印</text>
+        </view>
+        <view class="action-btn" @click="toggleDefault(p)">
+          <text class="action-text">{{ p.is_default ? '取消默认' : '设为默认' }}</text>
+        </view>
+        <view class="action-btn danger" @click="confirmDelete(p)">
+          <text class="action-text">删除</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup lang="uts">
+  import {
+    fetchPrinters,
+    deletePrinter,
+    setDefaultPrinter,
+    type PrinterItem,
+  } from '../../api/printers.uts'
+  import { printTest, invalidatePrinterCache } from '../../utils/print-manager.uts'
+
+  const statusBarHeight = ref(uni.getSystemInfoSync().statusBarHeight ?? 20)
+  const printers = ref<PrinterItem[]>([])
+
+  async function load() {
+    try {
+      uni.showLoading({ title: '加载中', mask: true })
+      printers.value = await fetchPrinters()
+    } catch (e) {
+      uni.showToast({ title: (e as Error).message, icon: 'none' })
+    } finally {
+      uni.hideLoading()
+    }
+  }
+
+  function goHome() {
+    uni.reLaunch({ url: '/pages/home/index' })
+  }
+
+  function goAdd() {
+    uni.navigateTo({ url: '/pages/print/add' })
+  }
+
+  function toggleDefault(p: PrinterItem) {
+    if (p.is_default) {
+      // 不允许没有默认 — 直接拒绝
+      uni.showToast({ title: '保留一台默认打印机即可', icon: 'none' })
+      return
+    }
+    // 设为默认会自动取消其他打印机的 is_default（后端原子处理）
+    setDefaultPrinter(p.id)
+      .then(() => {
+        uni.showToast({ title: '已设为默认', icon: 'success' })
+        invalidatePrinterCache()
+        load()
+      })
+      .catch((e) => {
+        uni.showToast({ title: (e as Error).message, icon: 'none' })
+      })
+  }
+
+  function confirmDelete(p: PrinterItem) {
+    uni.showModal({
+      title: '删除打印机',
+      content: '确认删除「' + p.name + '」？',
+      success: (res) => {
+        if (!res.confirm) return
+        deletePrinter(p.id)
+          .then(() => {
+            uni.showToast({ title: '已删除', icon: 'success' })
+            invalidatePrinterCache()
+            load()
+          })
+          .catch((e) => {
+            uni.showToast({ title: (e as Error).message, icon: 'none' })
+          })
+      },
+    })
+  }
+
+  async function testPrint(p: PrinterItem) {
+    uni.showLoading({ title: '发送中...', mask: true })
+    try {
+      const result = await printTest(p)
+      uni.hideLoading()
+      if (result.success) {
+        uni.showModal({
+          title: '发送成功',
+          content: '指令已发送到 ' + p.name + '（' + p.type + '）\n如果打印机未出纸，请检查：\n1. 蓝牙/网络是否连通\n2. 打印机是否为 ESC/POS 指令集',
+          showCancel: false,
+        })
+      } else {
+        uni.showModal({
+          title: '发送失败',
+          content: result.message ?? '',
+          showCancel: false,
+        })
+      }
+    } catch (e) {
+      uni.hideLoading()
+      uni.showModal({
+        title: '测试失败',
+        content: (e as Error).message,
+        showCancel: false,
+      })
+    }
+  }
+
+  onShow(() => {
+    load()
+  })
+</script>
+
+<style>
+  .page {
+    height: 100%;
+    background-color: #f5f6f8;
+  }
+
+  /* === 导航 === */
+  .nav {
+    background-color: #ff6a00;
+    padding-bottom: 20px;
+  }
+  .nav-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding-left: 24px;
+    padding-right: 24px;
+    height: 88px;
+  }
+  .nav-home {
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+  }
+  .home-icon {
+    color: #ffffff;
+    font-size: 32rpx;
+    margin-right: 6px;
+  }
+  .home-text {
+    color: #ffffff;
+    font-size: 24rpx;
+  }
+  .nav-title {
+    color: #ffffff;
+    font-size: 36rpx;
+    font-weight: bold;
+  }
+
+  /* === 说明条 === */
+  .tip-bar {
+    background-color: #fffbe6;
+    padding: 16px 24px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-bottom-color: #ffe58f;
+  }
+  .tip-text {
+    font-size: 24rpx;
+    color: #ad6800;
+  }
+
+  /* === 空态 === */
+  .empty {
+    align-items: center;
+    padding: 120px 48px;
+  }
+  .empty-icon {
+    font-size: 120rpx;
+    margin-bottom: 20px;
+  }
+  .empty-title {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-bottom: 12px;
+  }
+  .empty-hint {
+    font-size: 26rpx;
+    color: #999999;
+    margin-bottom: 32px;
+  }
+  .empty-btn {
+    background-color: #ff6a00;
+    padding: 20px 60px;
+    border-radius: 44px;
+  }
+  .empty-btn-text {
+    color: #ffffff;
+    font-size: 28rpx;
+    font-weight: bold;
+  }
+
+  /* === 卡片 === */
+  .printer-card {
+    background-color: #ffffff;
+    border-radius: 16px;
+    padding: 20px;
+    margin: 16px;
+  }
+  .card-head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .icon-wrap {
+    width: 72px;
+    height: 72px;
+    border-radius: 16px;
+    align-items: center;
+    justify-content: center;
+    margin-right: 16px;
+  }
+  .icon-bluetooth {
+    background-color: #e6f7ff;
+  }
+  .icon-wifi {
+    background-color: #f6ffed;
+  }
+  .icon-text {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+  .head-info {
+    flex: 1;
+  }
+  .name-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .name {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-right: 12px;
+  }
+  .default-tag {
+    background-color: #ff6a00;
+    padding: 4px 10px;
+    border-radius: 10px;
+  }
+  .default-text {
+    color: #ffffff;
+    font-size: 20rpx;
+  }
+  .type-label {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .card-body {
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .addr-label {
+    font-size: 24rpx;
+    color: #666666;
+    margin-right: 20px;
+  }
+
+  .card-actions {
+    flex-direction: row;
+    border-top-width: 1px;
+    border-top-style: solid;
+    border-top-color: #f0f0f0;
+    padding-top: 16px;
+  }
+  .action-btn {
+    flex: 1;
+    align-items: center;
+    padding: 8px 0;
+  }
+  .action-btn + .action-btn {
+    border-left-width: 1px;
+    border-left-style: solid;
+    border-left-color: #f0f0f0;
+  }
+  .action-text {
+    font-size: 26rpx;
+    color: #666666;
+  }
+  .action-btn.danger .action-text {
+    color: #ff4d4f;
+  }
+</style>

@@ -28,11 +28,11 @@ export class Setmeal {
   @Column({ type: 'varchar', length: 64, default: '' })
   category: string;
 
-  /** 价格（分） */
-  @Column({ type: 'integer', default: 0 })
+  /** 价格（元） */
+  @Column({ type: 'real', default: 0 })
   price: number;
 
-  /** 分组数据（JSON：groups: [{ name, type, min_choose, dishes: [{ id, name, category, price, type, weight }] }]） */
+  /** 分组数据（JSON：groups: [{ name, type, min_choose, dishes: [{ id, name, category, price, type, weight }] }]，price 单位元） */
   @Column({ type: 'text' })
   groups: string;
 
@@ -48,7 +48,7 @@ export class Setmeal {
   @Column({ type: 'varchar', length: 8, default: 'on' })
   status: string;
 
-  /** 起售金额（分） */
+  /** 起售份数（整数，非金额） */
   @Column({ type: 'integer', default: 0 })
   min_amount: number;
 

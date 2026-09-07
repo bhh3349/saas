@@ -1,0 +1,181 @@
+/**
+ * 打印管理器
+ *
+ * 统一封装：
+ *  1. 获取默认打印机（从后端拉，60s 缓存）
+ *  2. 调用 esc-pos.uts 生成指令
+ *  3. 经串行队列 + 失败重试后调用原生插件 sendBytes 发送
+ *
+ * 队列说明：蓝牙 SPP / WiFi TCP 同一时刻只允许一个连接写入，
+ * 并发打印会互相干扰，因此所有打印任务串行执行；
+ * 单个任务失败自动重试（间隔 1s，最多 2 次），仍失败则把最后一次错误返回给调用方。
+ */
+
+import { fetchPrinters, type PrinterItem } from '../api/printers.uts'
+import { fetchSettleReceiptStyle, defaultReceiptStyle, type ReceiptStyle } from '../api/receipt-style.uts'
+import { buildReceipt, buildTestReceipt, type ReceiptData } from './esc-pos.uts'
+import { sendBytes, type SendResult } from '../uni_modules/saas-printer/utssdk/index.uts'
+
+export type PrintResult = {
+  success: boolean
+  message: string
+}
+
+/** 获取默认打印机（本地缓存优先，避免每次下单都请求） */
+let _defaultPrinter: PrinterItem | null = null
+let _defaultPrinterTime = 0
+const PRINTER_CACHE_TTL = 60 * 1000
+
+/** 结账单票据样式缓存（配置桶，5 分钟过期） */
+let _styleCache: ReceiptStyle | null = null
+let _styleTime = 0
+const STYLE_CACHE_TTL = 5 * 60 * 1000
+
+/** 读取结账单票据样式：命中缓存直接返回；读取失败走默认样式（不阻塞打印） */
+async function getSettleReceiptStyle(): Promise<ReceiptStyle> {
+  const now = Date.now()
+  if (_styleCache != null && now - _styleTime < STYLE_CACHE_TTL) {
+    return _styleCache as ReceiptStyle
+  }
+  try {
+    const s = await fetchSettleReceiptStyle()
+    _styleCache = s
+    _styleTime = now
+    return s
+  } catch (e) {
+    // 拉取失败（无权限 / 网络异常）不影响打印：有旧缓存用旧缓存，否则走默认样式
+    if (_styleCache != null) {
+      return _styleCache as ReceiptStyle
+    }
+    return defaultReceiptStyle()
+  }
+}
+
+export async function getDefaultPrinter(forceRefresh: boolean = false): Promise<PrinterItem | null> {
+  const now = Date.now()
+  if (!forceRefresh && _defaultPrinter && now - _defaultPrinterTime < PRINTER_CACHE_TTL) {
+    return _defaultPrinter
+  }
+  try {
+    const list = await fetchPrinters()
+    const def = list.find((p) => p.is_default && p.enabled)
+    _defaultPrinter = def ?? null
+    _defaultPrinterTime = now
+    return _defaultPrinter
+  } catch (e) {
+    return _defaultPrinter
+  }
+}
+
+/** 打印失败自动重试次数（首次之外再试 2 次） */
+const PRINT_MAX_RETRY = 2
+
+/** 重试间隔（毫秒） */
+const PRINT_RETRY_DELAY = 1000
+
+type PrintTask = {
+  printer_type: string
+  address: string
+  port: number
+  bytes: Uint8Array
+  resolve: (r: PrintResult) => void
+}
+
+/** 待发送队列（FIFO） */
+let _queue: PrintTask[] = []
+
+/** 是否正在消费队列（保证串行） */
+let _draining = false
+
+/** 入队并触发消费 */
+function sendQueued(printerType: string, address: string, port: number, bytes: Uint8Array): Promise<PrintResult> {
+  return new Promise<PrintResult>((resolve) => {
+    _queue.push({
+      printer_type: printerType,
+      address: address,
+      port: port,
+      bytes: bytes,
+      resolve: resolve,
+    } as PrintTask)
+    drainQueue()
+  })
+}
+
+/** 串行消费打印队列 */
+async function drainQueue() {
+  if (_draining) {
+    return
+  }
+  _draining = true
+  while (_queue.length > 0) {
+    const task = _queue[0]
+    _queue = _queue.slice(1)
+    const r = await sendWithRetry(task)
+    task.resolve(r)
+  }
+  _draining = false
+}
+
+/** 单任务发送：失败重试 PRINT_MAX_RETRY 次，返回最后一次结果 */
+async function sendWithRetry(task: PrintTask): Promise<PrintResult> {
+  let last: PrintResult = { success: false, message: '未执行' }
+  for (let attempt = 0; attempt <= PRINT_MAX_RETRY; attempt++) {
+    try {
+      const r: SendResult = await sendBytes(task.printer_type, task.address, task.port, task.bytes)
+      last = { success: r.success, message: r.message }
+      if (r.success) {
+        return last
+      }
+    } catch (e) {
+      last = { success: false, message: (e as Error).message ?? '' }
+    }
+    if (attempt < PRINT_MAX_RETRY) {
+      await delay(PRINT_RETRY_DELAY)
+    }
+  }
+  return last
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(() => {
+      resolve()
+    }, ms)
+  })
+}
+
+/** 生成结账 / 小票指令（按商家后台「票据样式-结账单」配置）并入队发送 */
+export async function printReceipt(
+  receiptData: ReceiptData,
+  printer: PrinterItem | null = null,
+): Promise<PrintResult> {
+  const target = printer ?? (await getDefaultPrinter())
+  if (target == null) {
+    return { success: false, message: '未配置打印机，请先在打印管理里添加' }
+  }
+
+  try {
+    const style = await getSettleReceiptStyle()
+    const bytes = buildReceipt(receiptData, target.width_mm, style)
+    return await sendQueued(target.type, target.address, target.port, bytes)
+  } catch (e) {
+    return { success: false, message: (e as Error).message ?? '' }
+  }
+}
+
+/** 打印测试页 */
+export async function printTest(printer: PrinterItem): Promise<PrintResult> {
+  try {
+    const bytes = buildTestReceipt('川香居餐厅', printer.width_mm)
+    return await sendQueued(printer.type, printer.address, printer.port, bytes)
+  } catch (e) {
+    return { success: false, message: (e as Error).message ?? '' }
+  }
+}
+
+export function invalidatePrinterCache() {
+  _defaultPrinter = null
+  _defaultPrinterTime = 0
+  _styleCache = null
+  _styleTime = 0
+}

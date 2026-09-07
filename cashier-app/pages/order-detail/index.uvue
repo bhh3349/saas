@@ -1,0 +1,1141 @@
+<template>
+  <view class="page">
+    <!-- 顶部导航 -->
+    <view class="nav" :style="{ paddingTop: statusBarHeight + 'px' }">
+      <view class="nav-inner">
+        <view class="nav-back" @click="goBack">
+          <text class="back-icon">←</text>
+        </view>
+        <text class="nav-title">订单详情</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+
+    <!-- 桌台头部 -->
+    <view class="table-header">
+      <view class="table-title-row">
+        <view class="table-title-left">
+          <text class="table-name">{{ tableName }}</text>
+          <text v-if="guests > 0" class="table-guests">（{{ guests }}人）</text>
+        </view>
+        <view class="table-title-right">
+          <text v-if="canRefundDish" class="link-btn link-danger" @click="openRefund">退菜</text>
+            <text class="link-btn" @click="printBill">{{ printLabel }}</text>
+        </view>
+      </view>
+      <view class="remark-row" @click="editRemark">
+        <text class="remark-label">备注：</text>
+        <text class="remark-value">{{ remark ?? '' }}</text>
+        <text class="remark-arrow">›</text>
+      </view>
+    </view>
+
+    <!-- 可滚动主体 -->
+    <scroll-view class="body-scroll" scroll-y>
+      <!-- 菜品信息 -->
+      <view class="card">
+        <text class="card-title">菜品信息</text>
+
+        <view v-if="items.length == 0" class="empty">
+          <text class="empty-label">暂无菜品</text>
+        </view>
+
+          <view v-for="(item: OrderItemSnapshot, i: number) in items" :key="i" class="dish-block">
+          <view class="dish-row">
+            <view class="dish-info">
+              <text class="dish-name">{{ item.name }}</text>
+              <text v-if="item.spec_name" class="dish-spec">（{{ item.spec_name }}）</text>
+            </view>
+            <text class="dish-qty">x{{ item.qty }}</text>
+            <text class="dish-amount">¥{{ item.amount.toFixed(2) }}</text>
+          </view>
+          <view class="dish-sub">
+            <text class="dish-sub-tag">已下单 {{ orderMinutes }} 分钟</text>
+            <text class="dish-sub-time">{{ orderCreatedText }}</text>
+          </view>
+          <text v-if="item.remark" class="dish-remark">备注: {{ item.remark }}</text>
+        </view>
+
+        <view class="divider"></view>
+
+        <view class="total-row">
+          <text class="total-label">共 {{ totalQty }} 份菜品</text>
+          <view class="total-right">
+            <text class="total-sub">菜品合计</text>
+            <text class="total-amount">¥{{ totalAmount.toFixed(2) }}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 订单信息 -->
+      <view class="card">
+        <text class="card-title">订单信息</text>
+        <view class="info-row">
+          <text class="info-label">订单号</text>
+            <text class="info-value">{{ order?.order_no ?? '-' }}</text>
+        </view>
+          <view class="info-row" v-if="order != null && order!.mode == 'ticket' && (order!.ticket_no ?? '') != ''">
+          <text class="info-label">取餐号</text>
+          <text class="info-value ticket-no">{{ ticketNoText }}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">开台时间</text>
+          <text class="info-value">{{ orderCreatedText }}</text>
+        </view>
+        <view class="info-row" v-if="settledText">
+          <text class="info-label">结账时间</text>
+          <text class="info-value">{{ settledText }}</text>
+        </view>
+        <view class="info-row">
+          <text class="info-label">订单状态</text>
+          <text class="info-value">{{ statusText }}</text>
+        </view>
+      </view>
+
+      <view class="bottom-space"></view>
+    </scroll-view>
+
+    <!-- 退菜弹层 -->
+    <view v-if="refundShow" class="rf-mask" @click="refundShow = false">
+      <view class="rf-panel" @click.stop="">
+        <view class="rf-head">
+          <text class="rf-title">退菜</text>
+          <text class="rf-close" @click="refundShow = false">×</text>
+        </view>
+        <scroll-view class="rf-list" scroll-y>
+          <view v-for="(l, i) in refundLines" :key="i" class="rf-line">
+            <view class="rf-line-info">
+              <text class="rf-line-name">{{ l.name }}<text v-if="l.spec_name.length > 0" class="rf-line-spec">（{{ l.spec_name }}）</text></text>
+              <text class="rf-line-sub">可退 {{ l.max }} 份</text>
+            </view>
+            <view class="rf-line-ops">
+              <view class="rf-step" :class="{ 'rf-step-off': l.qty <= 0 }" @click="refundMinus(i)">
+                <text class="rf-step-text">−</text>
+              </view>
+              <text class="rf-line-qty">{{ l.qty }}</text>
+              <view class="rf-step" :class="{ 'rf-step-off': l.qty >= l.max }" @click="refundPlus(i)">
+                <text class="rf-step-text">+</text>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="rf-reason-row">
+          <view class="rf-reason-chips">
+            <view
+              v-for="r in refundReasons"
+              :key="r"
+              class="rf-reason-chip"
+              :class="{ 'rf-reason-chip-on': refundReason == r }"
+              @click="pickRefundReason(r)"
+            >
+              <text class="rf-reason-chip-text" :class="{ 'rf-reason-chip-text-on': refundReason == r }">{{ r }}</text>
+            </view>
+          </view>
+          <input
+            class="rf-reason-input"
+            v-model="refundReason"
+            placeholder="退菜原因（可点上方快捷标签或输入）"
+          />
+        </view>
+        <view class="rf-footer" @click="submitRefund">
+          <text class="rf-footer-text">确认退菜</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部操作栏（按订单状态动态显示） -->
+    <view class="action-bar" v-if="showActionBar">
+      <template v-if="order && order.status == 'completed'">
+        <view class="btn-outline" @click="reopenIt">
+          <text class="btn-outline-text">重新结账</text>
+        </view>
+        <view class="btn-solid" @click="printBill">
+          <text class="btn-solid-text">打印小票</text>
+        </view>
+      </template>
+      <template v-else-if="order && order.status == 'on_account'">
+        <view class="btn-outline" @click="goAddDish">
+          <text class="btn-outline-text">加菜</text>
+        </view>
+        <view class="btn-solid" @click="goSettle">
+          <text class="btn-solid-text">补收结账</text>
+        </view>
+      </template>
+      <template v-else-if="order && order.status == 'pending'">
+        <view class="btn-outline btn-danger-outline" @click="rejectIt">
+          <text class="btn-danger-text">拒单</text>
+        </view>
+        <view class="btn-outline" @click="acceptIt">
+          <text class="btn-outline-text">接单</text>
+        </view>
+        <view class="btn-solid" @click="goSettle">
+          <text class="btn-solid-text">去结账</text>
+        </view>
+      </template>
+      <template v-else-if="order && order.status == 'confirmed'">
+        <view class="btn-outline btn-danger-outline" @click="voidIt">
+          <text class="btn-danger-text">撤单</text>
+        </view>
+        <view class="btn-outline" @click="goAddDish">
+          <text class="btn-outline-text">加菜</text>
+        </view>
+        <view class="btn-solid" @click="goSettle">
+          <text class="btn-solid-text">去结账</text>
+        </view>
+      </template>
+      <template v-else-if="order && order.status == 'void'">
+        <view class="btn-full btn-disabled">
+          <text class="btn-disabled-text">订单已作废</text>
+        </view>
+      </template>
+      <template v-else>
+        <view class="btn-outline" @click="goAddDish">
+          <text class="btn-outline-text">加菜</text>
+        </view>
+        <view class="btn-solid" @click="goSettle">
+          <text class="btn-solid-text">去结账</text>
+        </view>
+      </template>
+    </view>
+  </view>
+</template>
+
+<script>
+  import { toInt } from '../../utils/num.uts'
+  import { type OrderItem, type OrderItemSnapshot, type RefundOrderItem, fetchOrderDetail, confirmOrder, rejectOrder, reopenOrder, refundOrder } from '../../api/orders.uts'
+  import { printReceipt, getDefaultPrinter } from '../../utils/print-manager.uts'
+
+  import type { ReceiptData, ReceiptItem } from '../../utils/esc-pos.uts'
+  type RefundLine = {
+    dish_id: number
+    name: string
+    spec_name: string
+    /** 可退上限（当前份数） */
+    max: number
+    /** 本次退菜份数 */
+    qty: number
+  }
+
+  /** 退菜快捷原因（参照美团收银「常用备注」） */
+  const REFUND_REASONS = ['错点', '不新鲜', '上菜慢', '未按要求制作', '口味问题']
+
+  export default {
+    data() {
+      return {
+        statusBarHeight: 20,
+        orderId: 0,
+        tableId: 0,
+        tableName: '',
+        guests: 0,
+        order: null as OrderItem | null,
+        remark: '',
+        /** 退菜弹层开关与原因 */
+        refundShow: false,
+        refundReason: '',
+        /** 退菜行（独立 data 字段，保证响应式） */
+        refundLines: [] as RefundLine[]
+      }
+    },
+    computed: {
+      printLabel(): string {
+        if (this.order != null && this.order!.status == 'completed') {
+          return '打印小票'
+        }
+        return '打印预结单'
+      },
+      showActionBar(): boolean {
+        return !!this.order
+      },
+      refundReasons(): string[] {
+        return REFUND_REASONS
+      },
+      /** 可退菜：有菜品且非作废单 */
+      canRefundDish(): boolean {
+        if (!this.order || this.order.status == 'void') return false
+        return this.items.length > 0
+      },
+      items(): OrderItemSnapshot[] {
+        if (!this.order) return [] as OrderItemSnapshot[]
+        return this.order.items
+      },
+      totalQty(): number {
+        let n = 0
+        for (let i = 0; i < this.items.length; i++) {
+          n += this.items[i].qty
+        }
+        return n
+      },
+      totalAmount(): number {
+        if (!this.order) return 0
+        return this.order.total_amount
+      },
+      orderCreatedText(): string {
+        if (!this.order) return '-'
+        return this.formatDateTime(this.order.created_at)
+      },
+      settledText(): string {
+        if (this.order == null || this.order!.settled_at == '') return ''
+        return this.formatDateTime(this.order!.settled_at ?? '')
+      },
+      /** 取餐号（4 位，前补零，与叫号屏口径一致） */
+      ticketNoText(): string {
+        if (!this.order || !this.order.ticket_no) return '-'
+        const n = this.order.ticket_no
+        return n < 10 ? '000' + n.toString() : n < 100 ? '00' + n.toString() : n < 1000 ? '0' + n.toString() : n.toString()
+      },
+      orderMinutes(): number {
+        if (!this.order) return 0
+        const start = new Date(this.order.created_at).getTime()
+        let mins = Math.floor((Date.now() - start) / 60000)
+        if (mins < 0) mins = 0
+        return mins
+      },
+      statusText(): string {
+        if (this.order == null) return '-'
+        const s = this.order!.status
+        if (s == 'pending') return '待接单'
+        if (s == 'confirmed') return '已确认'
+        if (s == 'completed') return '已结账'
+        if (s == 'void') return '已作废'
+        if (s == 'on_account') return '挂账'
+        return s
+      }
+    },
+
+    onLoad(options: OnLoadOptions) {
+      const info = uni.getSystemInfoSync()
+      this.statusBarHeight = info.statusBarHeight ?? 20
+      // 兼容两种入参：桌台页传 order_id，订单管理页传 id
+      const rawId = options['order_id'] ?? options['id'] ?? ''
+      this.orderId = toInt(rawId)
+      const tidRaw = parseFloat(options['table_id'] ?? '')
+      this.tableId = isNaN(tidRaw) ? 0 : tidRaw
+      this.tableName = options['table_name'] ?? ''
+      const gRaw = parseFloat(options['guests'] ?? '')
+      this.guests = isNaN(gRaw) ? 0 : gRaw
+    },
+    onShow() {
+      this.load()
+    },
+    methods: {
+      async load() {
+        if (this.orderId == 0) {
+          uni.showToast({ title: '参数错误', icon: 'none' })
+          return
+        }
+        try {
+          uni.showLoading({ title: '加载中...' })
+          const o = await fetchOrderDetail(this.orderId)
+          this.order = o
+            if (this.tableId == 0 && o.table_id != null) this.tableId = o.table_id!
+            if (this.tableName == '') this.tableName = '桌台' + (o.table_id ?? 0).toString()
+            if (this.guests == 0 && o.guests != null) this.guests = o.guests!
+          this.remark = o.remark ?? ''
+        } catch (e) {
+          uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      },
+      formatDateTime(iso: string): string {
+        if (iso == '') return '-'
+        const d = new Date(iso)
+        const pad = (n: number): string => (n < 10 ? '0' + n.toString() : n.toString())
+        return (
+          d.getFullYear().toString() +
+          '/' +
+          pad(d.getMonth() + 1) +
+          '/' +
+          pad(d.getDate()) +
+          ' ' +
+          pad(d.getHours()) +
+          ':' +
+          pad(d.getMinutes())
+        )
+      },
+      goBack() {
+        uni.navigateBack()
+      },
+      goAddDish() {
+        // 清空残留购物车，然后跳点餐页（桌台加菜模式）
+        uni.removeStorageSync('cashier_cart')
+        uni.removeStorageSync('cashier_cart_ctx')
+        let url = '/pages/order/index'
+        const qs: string[] = []
+        if (this.tableId > 0) qs.push('table_id=' + this.tableId.toString())
+        if (this.tableName) qs.push('table_name=' + encodeURIComponent(this.tableName))
+        if (this.orderId > 0) qs.push('order_id=' + this.orderId.toString())
+        if (this.guests > 0) qs.push('guests=' + this.guests.toString())
+        if (qs.length > 0) url += '?' + qs.join('&')
+        uni.navigateTo({ url: url })
+      },
+      goSettle() {
+        uni.navigateTo({ url: '/pages/settle/index?order_id=' + this.orderId.toString() })
+      },
+      /** 接单（pending → confirmed） */
+      acceptIt() {
+        if (this.orderId == 0) return
+        uni.showModal({
+          title: '接单确认',
+          content: '确认接受该订单并进入制作？',
+          confirmText: '确认接单',
+          success: (res) => {
+            if (res.confirm) {
+              this.doConfirm()
+            }
+          }
+        })
+      },
+      async doConfirm() {
+        try {
+          uni.showLoading({ title: '处理中...', mask: true })
+          await confirmOrder(this.orderId)
+          uni.showToast({ title: '已接单', icon: 'success' })
+          this.load()
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      },
+      reopenIt() {
+        if (this.orderId == 0) return
+        uni.showModal({
+          title: '重新结账',
+          content: '确认重新打开该订单进行结账？',
+          success: (res) => {
+            if (res.confirm) {
+              this.doReopen()
+            }
+          }
+        })
+      },
+      async doReopen() {
+        try {
+          uni.showLoading({ title: '处理中...', mask: true })
+          await reopenOrder(this.orderId)
+          uni.showToast({ title: '已重新打开', icon: 'success' })
+          this.load()
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      },
+      rejectIt() {
+        if (this.orderId == 0) return
+        uni.showModal({
+          title: '拒单确认',
+          content: '拒绝后订单作废并释放桌台，确认继续？',
+          confirmText: '确认拒单',
+          success: (res) => {
+            if (res.confirm) {
+              this.doReject()
+            }
+          }
+        })
+      },
+      async doReject() {
+        try {
+          uni.showLoading({ title: '处理中...', mask: true })
+          await rejectOrder(this.orderId)
+          uni.showToast({ title: '已拒单', icon: 'success' })
+          this.load()
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      },
+      editRemark() {
+        uni.showToast({ title: '备注功能待开发', icon: 'none' })
+      },
+      /** 打印当前账单：已结账单为补打小票，未结账单为预结单 */
+      async printBill() {
+        if (this.order == null) return
+        try {
+          const printer = await getDefaultPrinter()
+          if (printer == null) {
+            uni.showToast({ title: '未配置打印机，请先在打印管理里添加', icon: 'none' })
+            return
+          }
+          const shopName = (() => {
+            try {
+              const u = JSON.parse(uni.getStorageSync('user') as string) as UTSJSONObject
+              return (u['shopName'] as string) ?? ''
+            } catch (_) { return '餐饮收银' }
+          })()
+          const settled = this.order!.status == 'completed' || this.order!.status == 'on_account'
+          const receiptItems: ReceiptItem[] = []
+          for (let i = 0; i < this.items.length; i++) {
+            const it = this.items[i]
+            const receiptItem: ReceiptItem = {
+              name: it.name,
+              qty: it.qty,
+              price: it.unit_price,
+              subtotal: it.amount,
+              spec: it.spec_name ?? '',
+              remark: it.remark ?? ''
+            }
+            receiptItems.push(receiptItem)
+          }
+          const data: ReceiptData = {
+            shopName,
+            orderNo: this.order!.order_no,
+            tableNo: this.tableName.length > 0 ? this.tableName : (this.order!.table_id != null ? '#' + this.order!.table_id!.toString() : null),
+            guests: this.order!.guests ?? null,
+              createTime: this.order!.created_at ?? '',
+            settleTime: settled ? (this.order!.settled_at ?? '') : null,
+            items: receiptItems,
+            totalAmount: (this.order!.total_amount ?? 0),
+            paidAmount: settled ? (this.order!.paid_amount ?? 0) : null,
+            discountAmount: (this.order!.discount_amount ?? 0) > 0 ? (this.order!.discount_amount ?? 0) : null,
+            paymentMethod: settled ? (this.order!.payment_method_name ?? null) : null,
+            remark: this.order!.remark ?? null,
+          }
+          const r = await printReceipt(data, printer)
+          if (r.success) {
+            uni.showToast({ title: '已发送打印', icon: 'success' })
+          } else {
+            uni.showToast({ title: r.message, icon: 'none' })
+          }
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        }
+      },
+      voidIt() {
+        if (this.orderId == 0) return
+        uni.showModal({
+          title: '撤单',
+          content: '撤单后整单作废并释放桌台，确认继续？',
+          confirmText: '确认撤单',
+          success: (res) => {
+            if (res.confirm) {
+              this.doVoid()
+            }
+          }
+        })
+      },
+
+      async doVoid() {
+        try {
+          uni.showLoading({ title: '处理中...', mask: true })
+          await rejectOrder(this.orderId)
+          uni.showToast({ title: '已撤单', icon: 'success' })
+          setTimeout(() => {
+            uni.reLaunch({ url: '/pages/tables/index' })
+          }, 800)
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      },
+      openRefund() {
+        const lines: RefundLine[] = []
+        for (let i = 0; i < this.items.length; i++) {
+          const it = this.items[i]
+          lines.push({
+            dish_id: it.dish_id,
+            name: it.name,
+            spec_name: it.spec_name ?? '',
+            max: it.qty,
+            qty: 0
+          } as RefundLine)
+        }
+        this.refundLines = lines
+        this.refundReason = ''
+        this.refundShow = true
+      },
+      pickRefundReason(r: string) {
+        this.refundReason = this.refundReason == r ? '' : r
+      },
+      refundMinus(i: number) {
+        const l = this.refundLines[i]
+        if (l.qty > 0) {
+          l.qty--
+          this.refundLines = this.refundLines.slice()
+        }
+      },
+      refundPlus(i: number) {
+        const l = this.refundLines[i]
+        if (l.qty < l.max) {
+          l.qty++
+          this.refundLines = this.refundLines.slice()
+        }
+      },
+      /** 提交退菜（原因必填，参考美团收银习惯） */
+      async submitRefund() {
+        const items: RefundOrderItem[] = []
+        for (let i = 0; i < this.refundLines.length; i++) {
+          const l = this.refundLines[i]
+          if (l.qty <= 0) continue
+          const it: RefundOrderItem = { dish_id: l.dish_id, qty: l.qty }
+          if (l.spec_name.length > 0) it.spec_name = l.spec_name
+          items.push(it)
+        }
+        if (items.length == 0) {
+          uni.showToast({ title: '请先选择退菜份数', icon: 'none' })
+          return
+        }
+        const reason = this.refundReason.trim()
+        if (reason.length == 0) {
+          uni.showToast({ title: '请填写退菜原因', icon: 'none' })
+          return
+        }
+        try {
+          uni.showLoading({ title: '退菜中...', mask: true })
+          await refundOrder(this.orderId, { items: items, reason: reason })
+          this.refundShow = false
+          uni.showToast({ title: '退菜成功', icon: 'success' })
+          this.load()
+        } catch (e) {
+          uni.showToast({ title: (e as Error).message, icon: 'none' })
+        } finally {
+          uni.hideLoading()
+        }
+      }
+      }
+    }
+
+    </script>
+
+<style>
+  .page {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f6f8;
+  }
+
+  /* 顶部导航 */
+  .nav {
+    background: linear-gradient(to bottom, #ff6a00, #ff914d);
+  }
+
+  .nav-inner {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    height: 88rpx;
+    padding: 0 24rpx;
+  }
+
+  .nav-back {
+    width: 80rpx;
+    height: 60rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .back-icon {
+    font-size: 44rpx;
+    color: #ffffff;
+  }
+
+  .nav-title {
+    flex: 1;
+    font-size: 34rpx;
+    font-weight: bold;
+    color: #ffffff;
+    text-align: center;
+  }
+
+  .nav-right {
+    width: 80rpx;
+  }
+
+  /* 桌台头部 */
+  .table-header {
+    background-color: #ffffff;
+    padding: 24rpx;
+  }
+
+  .table-title-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .table-title-left {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .table-name {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .table-guests {
+    font-size: 26rpx;
+    color: #666666;
+    margin-left: 4rpx;
+  }
+
+  .table-title-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .link-btn {
+    font-size: 26rpx;
+    color: #ff6a00;
+    margin-left: 16rpx;
+  }
+
+  .link-danger {
+    color: #f5222d;
+  }
+
+  /* 退菜弹层 */
+  .rf-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+
+  .rf-panel {
+    background-color: #ffffff;
+    border-top-left-radius: 24rpx;
+    border-top-right-radius: 24rpx;
+    padding: 24rpx;
+    max-height: 1100rpx;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .rf-head {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16rpx;
+  }
+
+  .rf-title {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .rf-close {
+    font-size: 44rpx;
+    color: #999999;
+    padding: 0 16rpx;
+  }
+
+  .rf-list {
+    max-height: 500rpx;
+  }
+
+  .rf-line {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f5f5f5;
+  }
+
+  .rf-line-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .rf-line-name {
+    font-size: 28rpx;
+    color: #333333;
+    font-weight: bold;
+  }
+
+  .rf-line-spec {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .rf-line-sub {
+    margin-top: 6rpx;
+    font-size: 22rpx;
+    color: #999999;
+  }
+
+  .rf-line-ops {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .rf-step {
+    width: 56rpx;
+    height: 56rpx;
+    border-radius: 28rpx;
+    background-color: #fff4ec;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .rf-step-off {
+    background-color: #f0f0f0;
+  }
+
+  .rf-step-text {
+    font-size: 32rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .rf-line-qty {
+    min-width: 72rpx;
+    text-align: center;
+    font-size: 30rpx;
+    color: #333333;
+    font-weight: bold;
+  }
+
+  .rf-reason-row {
+    margin-top: 16rpx;
+  }
+
+  .rf-reason-chips {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-bottom: 12rpx;
+  }
+
+  .rf-reason-chip {
+    padding: 10rpx 24rpx;
+    background-color: #f5f6f8;
+    border-radius: 26rpx;
+    margin-right: 12rpx;
+    margin-bottom: 12rpx;
+  }
+
+  .rf-reason-chip-on {
+    background-color: #fff4ec;
+  }
+
+  .rf-reason-chip-text {
+    font-size: 24rpx;
+    color: #666666;
+  }
+
+  .rf-reason-chip-text-on {
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .rf-reason-input {
+    height: 80rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    padding: 0 24rpx;
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .rf-footer {
+    margin-top: 20rpx;
+    height: 88rpx;
+    background-color: #f5222d;
+    border-radius: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .rf-footer-text {
+    font-size: 30rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+
+  .remark-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 16rpx;
+    padding-top: 16rpx;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #f0f0f0;
+  }
+
+  .remark-label {
+    font-size: 26rpx;
+    color: #999999;
+  }
+
+  .remark-value {
+    flex: 1;
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .remark-arrow {
+    font-size: 30rpx;
+    color: #cccccc;
+  }
+
+  /* 可滚动主体 */
+  .body-scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .card {
+    background-color: #ffffff;
+    margin: 16rpx 24rpx;
+    border-radius: 16rpx;
+    padding: 24rpx;
+  }
+
+  .card-title {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+    margin-bottom: 16rpx;
+  }
+
+  /* 菜品 */
+  .dish-block {
+    padding: 16rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f5f5f5;
+  }
+
+  .dish-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .dish-info {
+    flex: 1;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .dish-name {
+    font-size: 28rpx;
+    color: #333333;
+    font-weight: bold;
+  }
+
+  .dish-spec {
+    font-size: 24rpx;
+    color: #999999;
+    margin-left: 4rpx;
+  }
+
+  .dish-qty {
+    font-size: 28rpx;
+    color: #666666;
+    margin-right: 24rpx;
+  }
+
+  .dish-amount {
+    font-size: 28rpx;
+    color: #333333;
+    font-weight: bold;
+  }
+
+  .dish-sub {
+    margin-top: 10rpx;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .dish-sub-tag {
+    font-size: 22rpx;
+    color: #ff6a00;
+    background-color: #fff4ec;
+    padding: 4rpx 12rpx;
+    border-radius: 6rpx;
+  }
+
+  .dish-sub-time {
+    font-size: 22rpx;
+    color: #999999;
+    margin-left: 16rpx;
+  }
+
+  .dish-remark {
+    margin-top: 8rpx;
+    font-size: 24rpx;
+    color: #ff6a00;
+  }
+
+  .divider {
+    height: 1rpx;
+    background-color: #eeeeee;
+    margin: 16rpx 0;
+  }
+
+  .total-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .total-label {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .total-right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .total-sub {
+    font-size: 26rpx;
+    color: #666666;
+    margin-right: 8rpx;
+  }
+
+  .total-amount {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  /* 订单信息 */
+  .info-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12rpx 0;
+  }
+
+  .info-label {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .info-value {
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  .ticket-no {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .empty {
+    padding: 60rpx 0;
+    text-align: center;
+  }
+
+  .empty-label {
+    font-size: 28rpx;
+    color: #bbbbbb;
+  }
+
+  .bottom-space {
+    height: 40rpx;
+  }
+
+  /* 底部操作栏 */
+  .action-bar {
+    height: 130rpx;
+    background-color: #ffffff;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #eeeeee;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 24rpx;
+  }
+
+  .btn-outline {
+    flex: 1;
+    height: 88rpx;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: #ff6a00;
+    border-radius: 44rpx;
+    margin-right: 16rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-outline-text {
+    font-size: 30rpx;
+    color: #ff6a00;
+    font-weight: bold;
+  }
+
+  .btn-danger-outline {
+    border-color: #f5222d;
+    margin-right: 16rpx;
+  }
+
+  .btn-danger-text {
+    font-size: 30rpx;
+    color: #f5222d;
+    font-weight: bold;
+  }
+
+  .btn-solid {
+    flex: 1;
+    height: 88rpx;
+    background-color: #ff6a00;
+    border-radius: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-solid-text {
+    font-size: 30rpx;
+    color: #ffffff;
+    font-weight: bold;
+  }
+
+  .btn-full {
+    flex: 1;
+    height: 88rpx;
+    border-radius: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .btn-disabled {
+    background-color: #f0f0f0;
+  }
+
+  .btn-disabled-text {
+    font-size: 30rpx;
+    color: #bbbbbb;
+  }
+</style>

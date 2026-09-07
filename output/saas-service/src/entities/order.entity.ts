@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -9,10 +10,11 @@ import { OrderMode, OrderStatus } from '../common/enums';
 
 /**
  * 订单（收银记账单）
- * 金额均以「分」存储（整数），API 层出入参统一用「元」。
+ * 金额均以「元」存储（带小数），全链路统一用「元」。
  * items 为 JSON 快照：[{ dish_id, name, spec_name, unit_price, qty, amount }]
  */
 @Entity('orders')
+@Index('idx_orders_shop_settled_status', ['shop_id', 'settled_at', 'status'])
 export class Order {
   @PrimaryGeneratedColumn()
   id: number;
@@ -28,6 +30,10 @@ export class Order {
   /** 点餐模式：table / ticket */
   @Column({ type: 'varchar', length: 16, default: OrderMode.Table })
   mode: string;
+
+  /** 实际用餐人数（开台/点餐时填，桌台卡片展示） */
+  @Column({ type: 'integer', nullable: true })
+  guests: number | null;
 
   /** 桌台模式：关联桌台 */
   @Column({ type: 'integer', nullable: true })
@@ -45,20 +51,20 @@ export class Order {
   @Column({ type: 'text' })
   items: string;
 
-  /** 应付金额（分） */
-  @Column({ type: 'integer' })
+  /** 应付金额（元） */
+  @Column({ type: 'real' })
   total_amount: number;
 
-  /** 实收金额（分），结账时记录 */
-  @Column({ type: 'integer', default: 0 })
+  /** 实收金额（元），结账时记录 */
+  @Column({ type: 'real', default: 0 })
   paid_amount: number;
 
-  /** 找零（分） */
-  @Column({ type: 'integer', default: 0 })
+  /** 找零（元） */
+  @Column({ type: 'real', default: 0 })
   change_amount: number;
 
-  /** 优惠金额（分）：折扣 / 优惠券 / 改价 / 免单 */
-  @Column({ type: 'integer', default: 0 })
+  /** 优惠金额（元）：折扣 / 优惠券 / 改价 / 免单 */
+  @Column({ type: 'real', default: 0 })
   discount_amount: number;
 
   /** 优惠类型：discount 折扣 / voucher 优惠券 / price_change 改价 / free 免单 */

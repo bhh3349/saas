@@ -1,0 +1,88 @@
+/**
+ * 认证接口：注册 / 登录 / 当前用户
+ */
+import { request } from '../utils/request.uts'
+import { toInt } from '../utils/num.uts'
+
+/** 登录返回的用户信息 */
+export type LoginUser = {
+  id: number
+  shop_id: number
+  phone: string
+  name: string
+  role: string
+  status: string
+  shopName?: string
+  shopAddress?: string
+  shopCreatedAt?: string
+}
+
+/** 登录响应 */
+export type LoginResult = {
+  token: string
+  user: LoginUser
+}
+
+/** 登录参数（具名类型，UTS 不支持对象简写） */
+export type LoginInput = {
+  phone: string
+  password: string
+}
+
+/** 注册参数 */
+export type RegisterInput = {
+  code: string
+  phone: string
+  password: string
+  shop_name: string
+  shop_address?: string
+  name?: string
+}
+
+/** 登录 */
+export function login(phone: string, password: string): Promise<LoginResult> {
+  const payload: LoginInput = {
+    phone: phone,
+    password: password,
+  }
+  return request<UTSJSONObject>({
+    url: '/auth/login',
+    method: 'POST',
+    data: payload,
+  }).then((raw): LoginResult => {
+    const token = (raw['token'] ?? '').toString()
+    const userData = raw['user'] as UTSJSONObject | null
+    if (token.length === 0 || userData == null) {
+      throw new Error('登录响应缺少 token 或用户信息')
+    }
+    const user: LoginUser = {
+      id: toInt((userData['id'] ?? 0).toString()),
+      shop_id: toInt((userData['shop_id'] ?? 0).toString()),
+      phone: (userData['phone'] ?? '').toString(),
+      name: (userData['name'] ?? '').toString(),
+      role: (userData['role'] ?? '').toString(),
+      status: (userData['status'] ?? '').toString(),
+      shopName: userData['shopName'] ? (userData['shopName'] ?? '').toString() : null,
+      shopAddress: userData['shopAddress'] ? (userData['shopAddress'] ?? '').toString() : null,
+      shopCreatedAt: userData['shopCreatedAt'] ? (userData['shopCreatedAt'] ?? '').toString() : null,
+    }
+    return { token: token, user: user } as LoginResult
+  })
+}
+
+/** 注册新店铺（激活码） */
+export function register(params: RegisterInput): Promise<LoginResult> {
+  return request<LoginResult>({
+    url: '/auth/register',
+    method: 'POST',
+    data: params,
+  })
+}
+
+/** 当前登录用户信息 */
+export function fetchMe(): Promise<LoginUser> {
+  return request<LoginUser>({
+    url: '/auth/me',
+    method: 'GET',
+  })
+}
