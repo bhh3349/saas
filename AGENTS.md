@@ -39,3 +39,9 @@
 - 项目相关的长期记录放在 `D:\OH-WorkSpace\SecondBrain`。
 - 三层结构为：`每日筆記/`、`創作庫/`、`知識庫/`。
 - 開工時更新每日筆記，收工時寫入當日進度。
+
+## HBuilderX CLI 注意（实测）
+
+- HBuilderX 主程序**必须以可见窗口方式启动**后，`cli.exe devices list` 等命令才有响应；以隐藏窗口（-WindowStyle Hidden）启动时 CLI 会无限挂起（实测 64s/154s 超时×2）。
+- `cli.exe devices list` 依赖主窗口 IPC 就绪；首次启动如有 DCloud 登录/协议弹窗也会阻塞。
+- MuMu 桥接模式连接：`adb connect 192.168.1.21:5555`（设备会自报为 PD2362 / 24031PN0DC）。
