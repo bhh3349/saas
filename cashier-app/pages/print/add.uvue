@@ -100,6 +100,17 @@
           v-model="portStr"
         />
       </view>
+      <view class="ip-guide">
+        <view class="ip-guide-head" @click="showIpGuide = !showIpGuide">
+          <text class="ip-guide-title">不知道打印机 IP？点此查看获取方法</text>
+          <text class="ip-guide-arrow">{{ showIpGuide ? '▲' : '▼' }}</text>
+        </view>
+        <view v-if="showIpGuide" class="ip-guide-body">
+          <text class="ip-guide-step">1. 打印机关机</text>
+          <text class="ip-guide-step">2. 长按进纸（FEED）键同时开机，保持 3-5 秒后松手</text>
+          <text class="ip-guide-step">3. 打印机自动出一张小票，上面印有 IP address，填入上方即可</text>
+        </view>
+      </view>
       <view class="hint-box">
         <text class="hint-main">💡 提示</text>
         <text class="hint-line">热敏打印机（芯烨/飞鹅/佳博等）默认通过 9100 端口</text>
@@ -181,6 +192,7 @@
   const portStr = ref<string>('9100')
   const widthMM = ref<number>(80)
   const isDefault = ref<boolean>(false)
+  const showIpGuide = ref<boolean>(false)
   const widths = [58, 80, 110]
 
   // 蓝牙相关
@@ -502,6 +514,34 @@
   .hint-line {
     font-size: 22rpx;
     color: #52c41a;
+  }
+  .ip-guide {
+    background-color: #fffbe6;
+    border-radius: 8px;
+    margin-top: 16px;
+    padding: 16px;
+  }
+  .ip-guide-head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .ip-guide-title {
+    font-size: 24rpx;
+    color: #d48806;
+    font-weight: bold;
+  }
+  .ip-guide-arrow {
+    font-size: 20rpx;
+    color: #d48806;
+  }
+  .ip-guide-body {
+    margin-top: 12px;
+  }
+  .ip-guide-step {
+    font-size: 22rpx;
+    color: #ad6800;
+    margin-top: 6px;
   }
 
   /* === 公共表单 === */
