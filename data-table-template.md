@@ -100,7 +100,29 @@
 </div>
 ```
 
-## 三、分页 DOM（可选）
+## 三、分页（复用 Pagination 组件，可选）
+
+统一分页条优先直接使用 `merchant-web/src/components/Pagination.tsx` 组件（默认每页 **10** 条，选项 **10 / 20 / 30 / 50**）：
+
+```tsx
+import Pagination, { DEFAULT_PAGE_SIZE } from '../components/Pagination';
+
+const [currentPage, setCurrentPage] = useState(1);
+const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE); // 默认 10 条/页
+
+<Pagination
+  total={filtered.length}
+  page={currentPage}
+  pageSize={pageSize}
+  onPageChange={setCurrentPage}
+  onPageSizeChange={(s) => {
+    setPageSize(s);
+    setCurrentPage(1); // 注意：组件不重置页码，调用方需自行处理（见 DishLibrary）
+  }}
+/>
+```
+
+### 分页 DOM 结构（组件内部实现，供样式参考 / 手写兜底）
 
 ```tsx
 <div className="table-pagination">
@@ -115,16 +137,20 @@
     >
       ‹
     </button>
-    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-      <button
-        key={p}
-        className={`page-num ${currentPage === p ? 'active' : ''}`}
-        type="button"
-        onClick={() => setCurrentPage(p)}
-      >
-        {p}
-      </button>
-    ))}
+    {pageNumbers(currentPage, totalPages).map((n, i) =>
+      n === '…' ? (
+        <span key={`e${i}`} className="page-ellipsis">…</span>
+      ) : (
+        <button
+          key={n}
+          className={`page-num ${currentPage === n ? 'active' : ''}`}
+          type="button"
+          onClick={() => setCurrentPage(n)}
+        >
+          {n}
+        </button>
+      ),
+    )}
     <button
       className="page-btn"
       disabled={currentPage >= totalPages}
@@ -141,17 +167,73 @@
     align="right"
     width="auto"
     options={[
+      { value: '10', label: '10 条/页' },
       { value: '20', label: '20 条/页' },
+      { value: '30', label: '30 条/页' },
       { value: '50', label: '50 条/页' },
-      { value: '100', label: '100 条/页' },
     ]}
     onChange={(v) => {
       setPageSize(Number(v));
-      setCurrentPage(1);
+      setCurrentPage(1); // 调用方需自行重置页码，组件不负责
     }}
   />
 </div>
 ```
+
+### 紧凑页码窗口与 page-ellipsis
+
+Pagination 组件内部用 `pageNumbers(page, totalPages)` 生成页码序列，规则如下：
+
+1. 总页数 **≤ 7**：展示全部页码，无省略号。
+2. 总页数 **> 7**：只保留「第 1、2 页 + 当前页及其前后各 1 页 + 倒数第 2 页和末页」，去重、过滤越界后升序排列；相邻页码间隔 > 1 的位置插入 `<span className="page-ellipsis">…</span>`。
+3. 省略号是**纯展示元素**（不可点击），类名 `.page-ellipsis`，样式已在 `global.css` 定义。
+
+示例：总 20 页、当前第 10 页 → `1 2 … 9 10 11 … 19 20`。
+
+## 三·补、rowSpan 多规格表格（模板的自有扩展）
+
+一行业务数据需要展开为多行（如多规格菜品：每个规格一行，公共列合并）时，在模板第二节基础上扩展。参考实现：`DishLibrary.tsx` 的 `tableRows` + 渲染部分。
+
+**数据准备**：把每条记录展开为行对象数组，每行携带 `rowSpan`（合并行数）与 `isFirst`（是否组内首行）：
+
+```tsx
+const tableRows = useMemo(() => {
+  return pageData.flatMap((d, idx) => {
+    if (d.specs.length > 1) {
+      return d.specs.map((s, i) => ({
+        dish: d, seq: idx + 1, spec: s.spec, price: s.price,
+        rowSpan: d.specs.length, isFirst: i === 0,
+      }));
+    }
+    return [{ dish: d, seq: idx + 1, spec: '标准', price: d.price, rowSpan: 1, isFirst: true }];
+  });
+}, [pageData]);
+```
+
+**渲染规则**：
+
+- `key` 用「记录 id + 规格标识」组合（如 `` `${d.id}_${r.spec}` ``），保证组内各行唯一。
+- **公共列**（序号、名称、分类、状态、操作列等）只在 `r.isFirst` 为真时渲染，并写 `rowSpan={r.rowSpan}`；非首行不渲染这些 `<td>`。
+- **分组内每行独有的列**（如规格名、单价）不加 `rowSpan`，每行正常渲染。
+
+```tsx
+{tableRows.map((r) => (
+  <tr key={`${r.dish.id}_${r.spec}`}>
+    {r.isFirst && (
+      <td style={{ fontWeight: 500 }} rowSpan={r.rowSpan}>{r.dish.name}</td> // 公共列：仅首行渲染
+    )}
+    <td className="td-center">{r.spec}</td>          {/* 行独有列：每行渲染 */}
+    <td className="td-center">{formatPrice(r.price)}</td>
+    {r.isFirst && (
+      <td className="td-sticky" rowSpan={r.rowSpan}>
+        <div className="row-actions">{/* 行操作按钮 */}</div>
+      </td>
+    )}
+  </tr>
+))}
+```
+
+**注意**：空态判断的 `colSpan` 仍按「总列数」计算（合并只影响数据行，不影响表头列数）。
 
 ## 四、类名速查表
 
@@ -167,7 +249,7 @@
 | 状态标签 | `.status-tag.status-on`（启用）/ `.status-tag.status-off`（停用） |
 | 行操作按钮组 | `.row-actions` > `button.action-link`（危险：追加 `.danger`） |
 | 批量勾选 | `input.table-check` |
-| 分页容器 | `.table-pagination` > `.page-total` / `.page-pages` / `.page-btn` / `.page-num.active` / `.page-size` |
+| 分页容器 | `.table-pagination` > `.page-total` / `.page-pages` / `.page-btn` / `.page-num.active` / `.page-ellipsis` / `.page-size` |
 | 弹窗遮罩/卡片 | `.modal-mask` > `.modal-card`（+ 具体 modal 类如 `dish-modal`） |
 | 弹窗头部 | `.modal-head` > `.modal-title` + `button.modal-close` |
 | 弹窗底部 | `.modal-foot` > `button.tm-btn.tm-btn-default` / `.tm-btn.tm-btn-primary` |
@@ -179,5 +261,6 @@
 3. **操作列**：最后一个 `<td>` 用 `td-sticky` + 内部 `.row-actions`，按钮用 `action-link`，危险操作用 `action-link danger`。
 4. **状态展示**：统一 `status-tag` + `status-on/status-off`，不要自己写颜色。
 5. **空数据**：必须渲染空状态行，`colSpan` 要等于实际总列数（含批量选择列）。
-6. **分页**：需要分页时复用第三节 DOM，页码/条数/总数字段名按业务改。
+6. **分页**：需要分页时优先复用 `Pagination` 组件（第三节）；组件不负责页码重置，改每页条数时调用方需自行 `setCurrentPage(1)`。
+7. **依赖组件**：`EmptyState`、`CommonSelect`、`Pagination` 从 `../components/` 导入。
 7. **依赖组件**：`EmptyState`、`CommonSelect` 从 `../components/` 导入。
