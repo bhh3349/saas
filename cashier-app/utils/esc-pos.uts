@@ -14,6 +14,10 @@
 
 import { defaultReceiptStyle, type ReceiptStyle } from '../api/receipt-style.uts'
 
+// #ifdef APP-ANDROID
+import { Charset } from 'java.nio.charset'
+// #endif
+
 /** 基本 ESC 指令 */
 const ESC = 0x1b
 const GS = 0x1d
@@ -41,20 +45,37 @@ function writeAscii(buf: number[], s: string) {
   }
 }
 
-/** 简单 ASCII 转 GBK 占位实现 — Phase 2 里替换为真实编码库 */
-function writeText(buf: number[], s: string) {
-  // 临时：先把可打印 ASCII 写上
+/**
+ * 将字符串编码为 GBK 字节序列。
+ * 热敏打印机内置 GB18030/GBK 字库，接收到 GBK 字节后可直接打印中文。
+ * Android 平台通过 java.nio.charset.Charset 完成编码；非 Android 平台暂不支持中文。
+ */
+function encodeGbk(s: string): number[] {
+  // #ifdef APP-ANDROID
+  const gbk = Charset.forName('GBK')
+  const bytes = s.toByteArray(gbk)
+  const out: number[] = []
+  for (let i = 0; i < bytes.size; i++) {
+    const b = bytes[i.toInt()]
+    out.push(b < 0 ? b + 256 : b)
+  }
+  return out
+  // #endif
+
+  // #ifndef APP-ANDROID
+  const out: number[] = []
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i)
-    if (c == null) { continue }
-    if (c >= 0x20 && c < 0x7f) buf.push(c)
-    else if (c >= 0x4e00 && c <= 0x9fff) {
-      // 中文占位：打 ?? 代替，等 Phase 2 编码库
-      buf.push(0x3f); buf.push(0x3f)
-    } else if (c === 0x09) {
-      // tab -> space
-      buf.push(0x20)
-    }
+    if (c != null && c >= 0x20 && c < 0x7f) out.push(c)
+  }
+  return out
+  // #endif
+}
+
+function writeText(buf: number[], s: string) {
+  const bytes = encodeGbk(s)
+  for (let i = 0; i < bytes.length; i++) {
+    buf.push(bytes[i])
   }
 }
 

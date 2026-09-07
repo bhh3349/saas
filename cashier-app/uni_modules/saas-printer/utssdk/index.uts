@@ -57,10 +57,10 @@ async function sendTcpResult(address: string, port: number, bytes: Uint8Array, t
 /** 统一入口：根据 type 自动选择通道 */
 export function sendBytes(type: string, address: string, port: number, bytes: Uint8Array, timeout: number = 5000): Promise<SendResult> {
   // #ifdef APP-ANDROID
-  if (type === 'bluetooth') {
+  if (type == 'bluetooth') {
     return sendBtResult(address, bytes, timeout)
   }
-  if (type === 'wifi') {
+  if (type == 'wifi') {
     return sendTcpResult(address, port, bytes, timeout)
   }
   return Promise.resolve({ success: false, message: '未知连接方式: ' + type } as SendResult)

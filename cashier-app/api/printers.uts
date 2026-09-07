@@ -32,7 +32,39 @@ export type CreatePrinterInput = {
 
 /** 列出本店全部打印机 */
 export function fetchPrinters(): Promise<PrinterItem[]> {
-  return request<PrinterItem[]>({ url: '/printers', method: 'GET' })
+  return new Promise<PrinterItem[]>((resolve, reject) => {
+    request<UTSJSONObject>({ url: '/printers', method: 'GET', raw: true })
+      .then((body) => {
+        const arr = body.getArray('data')
+        const out: PrinterItem[] = []
+        if (arr != null) {
+          for (let i = 0; i < arr.length; i++) {
+            const obj = arr[i] as UTSJSONObject
+            if (obj != null) {
+              const item: PrinterItem = {
+                id: (obj['id'] as number) ?? 0,
+                name: (obj['name'] as string) ?? '',
+                type: (obj['type'] as string) ?? 'wifi',
+                address: (obj['address'] as string) ?? '',
+                port: (obj['port'] as number) ?? 0,
+                brand: (obj['brand'] as string) ?? '',
+                width_mm: (obj['width_mm'] as number) ?? 80,
+                is_default: (obj['is_default'] as boolean) ?? false,
+                remark: (obj['remark'] as string) ?? '',
+                enabled: (obj['enabled'] as boolean) ?? true,
+                created_at: (obj['created_at'] as string) ?? '',
+                updated_at: (obj['updated_at'] as string) ?? '',
+              }
+              out.push(item)
+            }
+          }
+        }
+        resolve(out)
+      })
+      .catch((err) => {
+        reject(err)
+      })
+  })
 }
 
 /** 新增打印机 */
