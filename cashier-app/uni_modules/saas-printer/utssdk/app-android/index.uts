@@ -59,7 +59,67 @@ export type BtDevice = {
   bonded: boolean
 }
 
-// ========== 权限 ==========
+// ========== 通用权限（蓝牙及后续 GPS / 相机等原生能力共用） ==========
+
+/** 通用权限申请结果 */
+export type PermissionResult = {
+  /** 是否全部授予 */
+  granted: boolean
+  /** 未授予的权限列表 */
+  deniedList: Array<string>
+  /** 用户是否勾选了「不再询问」（true 时应引导跳转系统设置） */
+  doNotAskAgain: boolean
+  /** granted = false 时可直接展示给用户的引导文案 */
+  message: string
+}
+
+/**
+ * 通用动态权限申请：未授予的权限统一弹系统申请框。
+ * 失败时返回可直接展示的引导文案；doNotAskAgain = true 时可调用
+ * openPermissionSettings(permissions) 跳转本应用的系统权限设置页。
+ */
+export function requestPermissions(permissions: Array<string>): Promise<PermissionResult> {
+  return new Promise((resolve) => {
+    const activity = UTSAndroid.getUniActivity()
+    if (activity == null) {
+      resolve({ granted: false, deniedList: permissions, doNotAskAgain: false, message: '无法获取当前页面上下文，无法申请权限' } as PermissionResult)
+      return
+    }
+    // 已全部授予则直接返回，避免多余系统弹窗
+    if (UTSAndroid.checkSystemPermissionGranted(activity, permissions)) {
+      resolve({ granted: true, deniedList: [], doNotAskAgain: false, message: '' } as PermissionResult)
+      return
+    }
+    UTSAndroid.requestSystemPermission(activity, permissions, (allRight: boolean, grantedList: string[]) => {
+      if (allRight) {
+        resolve({ granted: true, deniedList: [], doNotAskAgain: false, message: '' } as PermissionResult)
+        return
+      }
+      // 系统弹窗流程结束但未全部授予：从 grantedList 反推被拒列表
+      const denied: Array<string> = []
+      for (let i = 0; i < permissions.length; i++) {
+        const p = permissions[i]
+        if (grantedList.find((g: string): boolean => g == p) == null) {
+          denied.push(p)
+        }
+      }
+      resolve({ granted: false, deniedList: denied, doNotAskAgain: false, message: '权限未授予，请允许相关权限后重试' } as PermissionResult)
+    }, (doNotAskAgain: boolean, deniedList: string[]) => {
+      const msg = doNotAskAgain ? '权限已被拒绝，请到系统设置中手动开启本应用所需权限' : '权限未授予，请允许相关权限后重试'
+      resolve({ granted: false, deniedList: deniedList, doNotAskAgain: doNotAskAgain, message: msg } as PermissionResult)
+    })
+  })
+}
+
+/** 跳转本应用的系统权限设置页（权限被「不再询问」后的引导出口；传入相关权限列表） */
+export function openPermissionSettings(permissions: Array<string>): void {
+  const activity = UTSAndroid.getUniActivity()
+  if (activity != null) {
+    UTSAndroid.gotoSystemPermissionActivity(activity, permissions)
+  }
+}
+
+// ========== 蓝牙权限 ==========
 
 /**
  * 动态申请蓝牙所需权限。
@@ -67,54 +127,38 @@ export type BtDevice = {
  * neverForLocation 标志时的扫描）；Android 11 及以下权限为静态声明，仅需定位权限用于扫描。
  * @returns true = 所需权限已授予
  */
-export function requestBluetoothPermissions(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const activity = UTSAndroid.getUniActivity()
-    if (activity == null) {
-      resolve(false)
-      return
-    }
-    let permissions: Array<string> = []
-    if (Build.VERSION.SDK_INT >= 31) {
-      permissions = [
-        'android.permission.BLUETOOTH_CONNECT',
-        'android.permission.BLUETOOTH_SCAN',
-        'android.permission.ACCESS_FINE_LOCATION',
-      ]
-    } else {
-      permissions = ['android.permission.ACCESS_FINE_LOCATION']
-    }
-    UTSAndroid.requestSystemPermission(activity, permissions, (allRight: boolean, grantedList: string[]) => {
-      resolve(allRight)
-    }, (doNotAskAgain: boolean, deniedList: string[]) => {
-      resolve(false)
-    })
-  })
+export async function requestBluetoothPermissions(): Promise<boolean> {
+  let permissions: Array<string> = []
+  if (Build.VERSION.SDK_INT >= 31) {
+    permissions = [
+      'android.permission.BLUETOOTH_CONNECT',
+      'android.permission.BLUETOOTH_SCAN',
+      'android.permission.ACCESS_FINE_LOCATION',
+    ]
+  } else {
+    permissions = ['android.permission.ACCESS_FINE_LOCATION']
+  }
+  const r = await requestPermissions(permissions)
+  return r.granted
 }
 
 /**
  * 蓝牙就绪检查：动态申请权限 + 校验蓝牙开关。
  * @returns '' 表示就绪，否则返回可直接展示给用户的错误提示
  */
-export function ensureBluetoothReady(): Promise<string> {
-  return new Promise((resolve) => {
-    const adapter = BluetoothAdapter.getDefaultAdapter()
-    if (adapter == null) {
-      resolve('设备不支持蓝牙')
-      return
-    }
-    requestBluetoothPermissions().then((granted) => {
-      if (!granted) {
-        resolve('蓝牙权限未授予，请到系统设置中允许本应用的「附近设备」权限')
-        return
-      }
-      if (!adapter.isEnabled()) {
-        resolve('蓝牙未开启，请到系统设置打开蓝牙')
-        return
-      }
-      resolve('')
-    })
-  })
+export async function ensureBluetoothReady(): Promise<string> {
+  const adapter = BluetoothAdapter.getDefaultAdapter()
+  if (adapter == null) {
+    return '设备不支持蓝牙'
+  }
+  const granted = await requestBluetoothPermissions()
+  if (!granted) {
+    return '蓝牙权限未授予，请到系统设置中允许本应用的「附近设备」权限'
+  }
+  if (!adapter.isEnabled()) {
+    return '蓝牙未开启，请到系统设置打开蓝牙'
+  }
+  return ''
 }
 
 // ========== 蓝牙 SPP ==========

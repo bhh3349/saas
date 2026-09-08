@@ -1,0 +1,33 @@
+/**
+ * 通用权限请求工具
+ *
+ * UTS 插件是唯一能访问 UTSAndroid 原生权限 API 的位置，通用实现在
+ * saas-printer 插件内（见 uni_modules/saas-printer/utssdk/app-android/index.uts
+ * 的「通用权限」段），本文件作为 app 层稳定入口转发。
+ *
+ * 后续 GPS / 相机等原生能力接入时统一走这里：
+ *   import { requestPermissions, openPermissionSettings } from '../utils/permissions.uts'
+ *   const r = await requestPermissions(['android.permission.CAMERA'])
+ *   if (!r.granted) {
+ *     // r.message 可直接 toast 展示
+ *     if (r.doNotAskAgain) openPermissionSettings(['android.permission.CAMERA']) // 跳系统设置
+ *   }
+ * 返回类型 PermissionResult 需要显式标注时从插件路径导入：
+ *   import { type PermissionResult } from '../uni_modules/saas-printer/utssdk/index.uts'
+ */
+
+import {
+  requestPermissions as _requestPermissions,
+  openPermissionSettings as _openPermissionSettings,
+  type PermissionResult,
+} from '../uni_modules/saas-printer/utssdk/index.uts'
+
+/** 通用动态权限申请：未授予的统一弹系统申请框，失败返回可展示的引导文案 */
+export function requestPermissions(permissions: Array<string>): Promise<PermissionResult> {
+  return _requestPermissions(permissions)
+}
+
+/** 跳转本应用的系统权限设置页（permissions 为相关权限列表） */
+export function openPermissionSettings(permissions: Array<string>): void {
+  _openPermissionSettings(permissions)
+}

@@ -16,6 +16,8 @@ import {
   getPairedDevices as _getPaired,
   startBluetoothScan as _scanBt,
   ensureBluetoothReady as _ensureBtReady,
+  requestPermissions as _requestPermissions,
+  openPermissionSettings as _openPermissionSettings,
   type BtDevice,
 } from './app-android/index.uts'
 // #endif
@@ -24,6 +26,53 @@ import {
 export type SendResult = {
   success: boolean
   message: string
+}
+
+/** 通用权限申请结果（跨平台别名） */
+export type PermissionResult = {
+  /** 是否全部授予 */
+  granted: boolean
+  /** 未授予的权限列表 */
+  deniedList: Array<string>
+  /** 用户是否勾选了「不再询问」（true 时应引导跳转系统设置） */
+  doNotAskAgain: boolean
+  /** granted = false 时可直接展示给用户的引导文案 */
+  message: string
+}
+
+/** 原生结果 → 入口 PermissionResult 拷贝（跨编译单元类型不一致，需逐字段转） */
+async function requestPermsResult(permissions: Array<string>): Promise<PermissionResult> {
+  const r = await _requestPermissions(permissions)
+  return {
+    granted: r.granted,
+    deniedList: r.deniedList,
+    doNotAskAgain: r.doNotAskAgain,
+    message: r.message,
+  } as PermissionResult
+}
+
+/**
+ * 通用动态权限申请（蓝牙 / GPS / 相机等原生能力共用）。
+ * granted = false 时 message 为可直接展示的引导文案；
+ * doNotAskAgain = true 时可接着调用 openPermissionSettings(permissions) 跳系统设置。
+ */
+export function requestPermissions(permissions: Array<string>): Promise<PermissionResult> {
+  // #ifdef APP-ANDROID
+  return requestPermsResult(permissions)
+  // #endif
+  // #ifndef APP-ANDROID
+  return Promise.resolve({ granted: false, deniedList: permissions, doNotAskAgain: false, message: '当前平台暂不支持原生权限申请' } as PermissionResult)
+  // #endif
+}
+
+/** 跳转本应用的系统权限设置页（permissions 为相关权限列表，如 ['android.permission.CAMERA']） */
+export function openPermissionSettings(permissions: Array<string>): void {
+  // #ifdef APP-ANDROID
+  _openPermissionSettings(permissions)
+  // #endif
+  // #ifndef APP-ANDROID
+  // 其他平台无系统权限设置页可跳
+  // #endif
 }
 
 /** 蓝牙设备信息（跨平台别名） */
