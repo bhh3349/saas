@@ -71,9 +71,21 @@ export type CreateOrderDto = {
   remark?: string
 }
 
-/** 结账 DTO */
-export type SettleOrderDto = {
+/** 拆分支付行：单行 = 一种支付方式的实收金额（元，>0，两位小数） */
+export type SettlePaymentLine = {
   payment_method_id: number
+  amount: number
+}
+
+/**
+ * 结账 DTO
+ * - 单支付：传 payment_method_id（兼容旧路径）
+ * - 混合支付：传 payments 数组（>=2 行），与 payment_method_id 互斥
+ */
+export type SettleOrderDto = {
+  payment_method_id?: number
+  /** 混合支付行（传了走 order_payments 拆分逻辑） */
+  payments?: SettlePaymentLine[]
   paid_amount?: number
   discount_amount?: number
   discount_type?: string
@@ -210,7 +222,21 @@ export async function addOrderItems(
 /** 结账 */
 export async function settleOrder(id: number, dto: SettleOrderDto): Promise<OrderItem> {
   const payload = new UTSJSONObject()
-  payload['payment_method_id'] = dto.payment_method_id
+  const lines = dto.payments != null ? dto.payments! : []
+  const hasPayments = lines.length > 0
+  if (hasPayments) {
+    // 混合支付：payments 逐行落下；payment_method_id 与之互斥，不能同传
+    const payArr: UTSJSONObject[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const line = new UTSJSONObject()
+      line['payment_method_id'] = lines[i].payment_method_id
+      line['amount'] = lines[i].amount
+      payArr.push(line)
+    }
+    payload['payments'] = payArr
+  } else {
+    payload['payment_method_id'] = dto.payment_method_id ?? 0
+  }
   payload['paid_amount'] = dto.paid_amount ?? 0
   if (dto.discount_amount != null) payload['discount_amount'] = dto.discount_amount!
   if (dto.discount_type != null) payload['discount_type'] = dto.discount_type!

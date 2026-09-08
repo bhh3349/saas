@@ -488,7 +488,7 @@ GS V 66 0            切纸（部分切）
 |---|---|---|---|
 | ✅ 已完成 | 蓝牙动态权限请求 | saas-printer 新增 `requestBluetoothPermissions` / `ensureBluetoothReady`：API 31+ 运行时申请 `BLUETOOTH_CONNECT`/`BLUETOOTH_SCAN`（含定位），低版本申请定位；sendBluetooth 与扫描前自动调用，失败返回可展示的引导文案 | —— |
 | 🟠 P1 | 权限请求通用工具封装 | 现有实现绑定蓝牙场景；如需 GPS / 相机等再抽象为通用 requestPermissions 工具（失败跳系统设置） | 后续原生能力入口 |
-| 🟠 P1 | 接单模块完整联调 | 收银端详情页已支持手工 pending 单的接单/拒单（confirmOrder/rejectOrder）；扫码点餐二期的 pending 订单推送 + 联调仍待二期 | 扫码点餐落地后 |
+| 🟠 P1 | 接单模块完整联调 | 收银端详情页已支持手工 pending 单的接单/拒单（confirmOrder/rejectOrder）；扫码点餐二期的 pending 订单推送 + 联调仍待二期。二期公开接口（顾客扫码点餐）的预留设计落档于 `output/saas-service/docs/scan-ordering-api.md`（由 Codex 撰写中） | 扫码点餐落地后 |
 | ✅ 已完成 | 打印小票样式模板化 | 新增 `api/receipt-style.uts` 读 `GET /admin/buckets/print-style`（老板/收银员可读）取「结账单」配置；buildReceipt 支持区块开关 / 字号（small/medium/large → ESC 放大倍数）/ 页眉页脚；5 分钟缓存，读取失败回退默认样式。注意：中文 GBK 编码仍为占位（writeText 打 `??`），真机出票前先解决编码 | —— |
 | ✅ 已完成 | 退出登录清除打印机缓存 | logout 调 `invalidatePrinterCache()`（默认打印机 + 票据样式缓存一并清除） | —— |
 | ✅ 已完成 | BASE_URL 环境切换 | `utils/config.uts` 环境清单（dev 模拟器 / lan 真机 / prod 云服务器）+ 首页头像弹出层「环境切换」，选择持久化、下一请求生效 | —— |
