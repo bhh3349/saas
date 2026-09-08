@@ -59,7 +59,7 @@
             <view class="btn-minus" @click.stop="minusLine(line)">
               <text class="btn-minus-text">−</text>
             </view>
-            <text class="line-qty">{{ line.qty }}</text>
+            <text class="line-qty" @click.stop="openQtyPanel(line)">{{ line.qty }}</text>
             <view
               class="btn-plus"
               :class="{ 'btn-plus-disabled': line.dish.sold_out }"
@@ -90,6 +90,36 @@
         </view>
         <view class="picker-close" @click="pickerShow = false">
           <text class="picker-close-text">取消</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 数量直输面板 -->
+    <view v-if="qtyPanelShow" class="picker-mask" @click="closeQtyPanel">
+      <view class="picker-panel" @click.stop="">
+        <view class="qty-panel-title">
+          <text class="picker-dish-name">{{ qtyPanelLine ? qtyPanelLine.dish.name : '' }}</text>
+          <text v-if="qtyPanelLine && qtyPanelLine.spec_name" class="picker-dish-spec">（{{ qtyPanelLine!.spec_name }}）</text>
+          <text class="qty-panel-label">份数</text>
+        </view>
+        <view class="qty-display-row">
+          <text class="qty-display">{{ qtyInput }}</text>
+        </view>
+        <view class="qty-keypad">
+          <view class="key" @click="pressQtyKey('1')"><text class="key-text">1</text></view>
+          <view class="key" @click="pressQtyKey('2')"><text class="key-text">2</text></view>
+          <view class="key" @click="pressQtyKey('3')"><text class="key-text">3</text></view>
+          <view class="key key-func" @click="pressQtyBackspace"><text class="key-func-text">⌫</text></view>
+          <view class="key" @click="pressQtyKey('4')"><text class="key-text">4</text></view>
+          <view class="key" @click="pressQtyKey('5')"><text class="key-text">5</text></view>
+          <view class="key" @click="pressQtyKey('6')"><text class="key-text">6</text></view>
+          <view class="key key-func" @click="clearQty"><text class="key-func-text">清空</text></view>
+          <view class="key" @click="pressQtyKey('7')"><text class="key-text">7</text></view>
+          <view class="key" @click="pressQtyKey('8')"><text class="key-text">8</text></view>
+          <view class="key" @click="pressQtyKey('9')"><text class="key-text">9</text></view>
+          <view class="key key-func" @click="closeQtyPanel"><text class="key-func-text">取消</text></view>
+          <view class="key" @click="pressQtyKey('0')"><text class="key-text">0</text></view>
+          <view class="key key-confirm" @click="confirmQty"><text class="key-confirm-text">确认</text></view>
         </view>
       </view>
     </view>
@@ -152,6 +182,9 @@
         pickerShow: false,
         pickerLine: null as CartLine | null,
         pickerRemark: '',
+        qtyPanelShow: false,
+        qtyPanelLine: null as CartLine | null,
+        qtyInput: '',
         remarks: [] as RemarkEntry[]
       }
     },
@@ -329,6 +362,62 @@
         this.pickerLine = line
         this.pickerRemark = line.remark
         this.pickerShow = true
+      },
+      /** 点击数量文本：弹出数量直输面板 */
+      openQtyPanel(line: CartLine) {
+        if (line.dish.sold_out) {
+          uni.showToast({ title: line.dish.name + ' 已沽清', icon: 'none' })
+          return
+        }
+        this.qtyPanelLine = line
+        this.qtyInput = line.qty.toString()
+        this.qtyPanelShow = true
+      },
+      /** 数量键盘：追加数字（上限 999，前导 0 直接替换） */
+      pressQtyKey(k: string) {
+        if (this.qtyInput == '0') {
+          this.qtyInput = k == '0' ? '0' : k
+          return
+        }
+        if (this.qtyInput.length >= 3) return
+        this.qtyInput = this.qtyInput + k
+      },
+      pressQtyBackspace() {
+        if (this.qtyInput.length > 1) {
+          this.qtyInput = this.qtyInput.substring(0, this.qtyInput.length - 1)
+        } else {
+          this.qtyInput = '0'
+        }
+      },
+      clearQty() {
+        this.qtyInput = '0'
+      },
+      closeQtyPanel() {
+        this.qtyPanelShow = false
+        this.qtyPanelLine = null
+      },
+      /** 确认：1-999 范围校验后更新购物车行数量（合计为 computed 自动重算） */
+      confirmQty() {
+        if (this.qtyPanelLine == null) return
+        const q = toInt(this.qtyInput)
+        if (q < 1 || q > 999) {
+          uni.showToast({ title: '份数需在 1-999 之间', icon: 'none' })
+          return
+        }
+        const key = this.qtyPanelLine!.key
+        let found = false
+        for (let i = 0; i < this.cart.length; i++) {
+          if (this.cart[i].key == key) {
+            this.cart[i].qty = q
+            found = true
+            break
+          }
+        }
+        if (!found) {
+          this.cart.push({ key: key, qty: q } as CartEntry)
+        }
+        this.persistCart()
+        this.closeQtyPanel()
       },
       removeLine() {
         if (this.pickerLine == null) return
@@ -892,5 +981,85 @@
   .picker-close-text {
     font-size: 28rpx;
     color: #666666;
+  }
+
+  /* 数量直输面板 */
+  .qty-panel-title {
+    padding: 20rpx 0;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .qty-panel-label {
+    flex: 1;
+    font-size: 24rpx;
+    color: #999999;
+    text-align: right;
+  }
+
+  .qty-display-row {
+    margin-top: 20rpx;
+    height: 88rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 24rpx;
+  }
+
+  .qty-display {
+    font-size: 40rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .qty-keypad {
+    margin-top: 20rpx;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .key {
+    width: 165rpx;
+    height: 88rpx;
+    margin-right: 10rpx;
+    margin-bottom: 10rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .key-text {
+    font-size: 36rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .key-func {
+    background-color: #fff4ec;
+  }
+
+  .key-func-text {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ff6a00;
+  }
+
+  .key-confirm {
+    background-color: #ff6a00;
+  }
+
+  .key-confirm-text {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ffffff;
   }
 </style>
