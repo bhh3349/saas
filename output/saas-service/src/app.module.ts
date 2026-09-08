@@ -11,6 +11,7 @@ import { Dish } from './entities/dish.entity';
 import { OperationLog } from './entities/operation-log.entity';
 import { Order } from './entities/order.entity';
 import { OrderRefund } from './entities/order-refund.entity';
+import { OrderPayment } from './entities/order-payment.entity';
 import { Shop } from './entities/shop.entity';
 import { Category } from './entities/category.entity';
 import { Attribute } from './entities/attribute.entity';
@@ -40,7 +41,7 @@ import { PrintersModule } from './modules/printers/printers.module';
     TypeOrmModule.forRoot({
       type: 'better-sqlite3',
       database: getConfig().dbPath,
-      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket, OrderRefund, OperationLog, Device, Printer],
+      entities: [User, Table, Area, PaymentMethod, Dish, Order, Shop, Category, Attribute, Setmeal, ShopBucket, OrderRefund, OrderPayment, OperationLog, Device, Printer],
       // 开发期自动建表；生产可改为 migration 或预执行建表脚本
       synchronize: true,
     }),

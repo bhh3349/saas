@@ -13,11 +13,13 @@ import { Dish } from '../../entities/dish.entity';
 import { OperationLog, SensitiveAction } from '../../entities/operation-log.entity';
 import { Order } from '../../entities/order.entity';
 import { OrderRefund } from '../../entities/order-refund.entity';
+import { OrderPayment } from '../../entities/order-payment.entity';
 import { PaymentMethod } from '../../entities/payment-method.entity';
 import { Table } from '../../entities/table.entity';
 import { CreateOrderDto, OrderItemDto } from './dto/create-order.dto';
 import { RefundOrderDto } from './dto/refund-order.dto';
 import { SettleOrderDto } from './dto/settle-order.dto';
+import { SettlePaymentDto } from './dto/settle-order.dto';
 
 export interface OrderItemSnapshot {
   dish_id: number;
@@ -332,6 +334,7 @@ export class OrdersService {
   async reject(user: AuthUser, id: number): Promise<OrderItem> {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(Order);
+      const paymentRepo = manager.getRepository(OrderPayment);
       const order = await this.findInShop(orderRepo, user, id);
       if (
         ![
@@ -341,6 +344,7 @@ export class OrdersService {
       ) {
         throw new BusinessException('仅未结账订单可撤单');
       }
+      await paymentRepo.delete({ order_id: order.id });
       const prevStatus = order.status;
       order.status = OrderStatus.Void;
       await orderRepo.save(order);
@@ -370,6 +374,7 @@ export class OrdersService {
   async settle(user: AuthUser, id: number, dto: SettleOrderDto): Promise<OrderItem> {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(Order);
+      const paymentRepo = manager.getRepository(OrderPayment);
       const order = await this.findInShop(orderRepo, user, id);
       if (
         ![
@@ -380,16 +385,6 @@ export class OrdersService {
       ) {
         throw new BusinessException('当前订单状态不可结账');
       }
-      const pay = await manager.getRepository(PaymentMethod).findOne({
-        where: { id: dto.payment_method_id },
-      });
-      if (!pay || pay.shop_id !== user.shopId) {
-        throw new BusinessException('结账方式不存在');
-      }
-      if (!pay.enabled) {
-        throw new BusinessException('该结账方式已停用');
-      }
-
       const total = order.total_amount;
       let paid = dto.paid_amount !== undefined ? dto.paid_amount : total;
       let discount = 0;
@@ -417,11 +412,31 @@ export class OrdersService {
       order.discount_name = discountName;
       order.voucher_id = voucherId;
       order.change_amount = Math.max(0, paid - (total - discount));
-      order.payment_method_id = pay.id;
-      order.payment_method_name = pay.name;
+      const methodRepo = manager.getRepository(PaymentMethod);
+      const paymentRows = dto.payments
+        ? await this.buildMixedPaymentRows(
+            methodRepo,
+            user.shopId,
+            dto.payments,
+            paid,
+            order.id,
+          )
+        : [
+            await this.buildSinglePaymentRow(
+              methodRepo,
+              user.shopId,
+              dto.payment_method_id!,
+              paid,
+              order.id,
+            ),
+          ];
+      order.payment_method_id = paymentRows[0].payment_method_id;
+      order.payment_method_name = paymentRows[0].payment_method_name;
       if (dto.remark !== undefined) order.remark = dto.remark;
       order.settled_at = new Date();
       await orderRepo.save(order);
+      await paymentRepo.delete({ order_id: order.id });
+      await paymentRepo.save(paymentRows);
       await this.releaseTable(manager, order);
 
       // 敏感操作日志：优惠券核销 / 改价优惠
@@ -517,6 +532,8 @@ export class OrdersService {
         )
       ) {
         order.paid_amount = Math.max(0, order.paid_amount - refundTotal);
+        const paymentRepo = manager.getRepository(OrderPayment);
+        await this.reducePaymentRows(paymentRepo, order.id, refundTotal);
       }
       await orderRepo.save(order);
       await refundRepo.save(refundRows);
@@ -557,6 +574,7 @@ export class OrdersService {
       order.payment_method_name = '免单';
       order.settled_at = new Date();
       await orderRepo.save(order);
+      await manager.getRepository(OrderPayment).delete({ order_id: order.id });
       await this.releaseTable(manager, order);
       await this.writeLog(
         manager,
@@ -618,6 +636,7 @@ export class OrdersService {
       order.payment_method_id = null;
       order.payment_method_name = null;
       await orderRepo.save(order);
+      await manager.getRepository(OrderPayment).delete({ order_id: order.id });
       await this.occupyTableIfIdle(manager, order);
       await this.writeLog(
         manager,
@@ -644,6 +663,93 @@ export class OrdersService {
       throw new BusinessException('订单不存在');
     }
     return order;
+  }
+
+  /** 校验并构建混合支付行；合计必须等于实收入账金额 */
+  private async buildMixedPaymentRows(
+    methodRepo: Repository<PaymentMethod>,
+    shopId: number,
+    rows: SettlePaymentDto[],
+    paidAmount: number,
+    orderId: number,
+  ): Promise<OrderPayment[]> {
+    if (!rows.length) {
+      throw new BusinessException('混合支付至少包含一笔支付');
+    }
+    const paymentRows: OrderPayment[] = [];
+    let totalAmount = 0;
+    for (const row of rows) {
+      const method = await methodRepo.findOne({ where: { id: row.payment_method_id } });
+      if (!method || method.shop_id !== shopId) {
+        throw new BusinessException('结账方式不存在');
+      }
+      if (!method.enabled) {
+        throw new BusinessException(`结账方式「${method.name}」已停用`);
+      }
+      const amount = Math.round(row.amount * 100) / 100;
+      if (amount <= 0) {
+        throw new BusinessException('支付行金额必须大于 0');
+      }
+      totalAmount += amount;
+      paymentRows.push({
+        order_id: orderId,
+        payment_method_id: method.id,
+        payment_method_name: method.name,
+        amount,
+      } as OrderPayment);
+    }
+    if (Math.round(totalAmount * 100) !== Math.round(paidAmount * 100)) {
+      throw new BusinessException('混合支付合计必须等于实收金额');
+    }
+    return paymentRows;
+  }
+
+  /** 兼容旧单支付请求：内部统一转换为一行支付 */
+  private async buildSinglePaymentRow(
+    methodRepo: Repository<PaymentMethod>,
+    shopId: number,
+    methodId: number,
+    amount: number,
+    orderId: number,
+  ): Promise<OrderPayment> {
+    const method = await methodRepo.findOne({ where: { id: methodId } });
+    if (!method || method.shop_id !== shopId) {
+      throw new BusinessException('结账方式不存在');
+    }
+    if (!method.enabled) {
+      throw new BusinessException('该结账方式已停用');
+    }
+    return {
+      order_id: orderId,
+      payment_method_id: method.id,
+      payment_method_name: method.name,
+      amount: Math.round(amount * 100) / 100,
+    } as OrderPayment;
+  }
+
+  /** 退款时按行顺序核销正向支付行，现金优先；不保留 0 元脏行 */
+  private async reducePaymentRows(
+    paymentRepo: Repository<OrderPayment>,
+    orderId: number,
+    refundAmount: number,
+  ): Promise<void> {
+    const rows = await paymentRepo.find({
+      where: { order_id: orderId },
+      order: { id: 'ASC' },
+    });
+    let remaining = Math.round(refundAmount * 100);
+    for (const row of rows) {
+      if (remaining <= 0) break;
+      const rowAmount = Math.round(row.amount * 100);
+      const used = Math.min(rowAmount, remaining);
+      row.amount = +(rowAmount - used) / 100;
+      remaining -= used;
+    }
+    await paymentRepo.save(rows.filter((row) => row.amount > 0));
+    const clearIds = rows.filter((row) => row.amount <= 0).map((row) => row.id);
+    if (clearIds.length) {
+      await paymentRepo.delete(clearIds);
+    }
   }
 
   /** 当日订单号：YYYYMMDD-0001 递增 */

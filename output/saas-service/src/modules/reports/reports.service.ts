@@ -6,6 +6,7 @@ import { OrderMode, OrderStatus } from '../../common/enums';
 import { OperationLog } from '../../entities/operation-log.entity';
 import { Order } from '../../entities/order.entity';
 import { OrderRefund } from '../../entities/order-refund.entity';
+import { OrderPayment } from '../../entities/order-payment.entity';
 import { Table } from '../../entities/table.entity';
 import { OrdersService, OrderItemSnapshot } from '../orders/orders.service';
 
@@ -263,6 +264,8 @@ export class ReportsService {
     private readonly refundRepo: Repository<OrderRefund>,
     @InjectRepository(OperationLog)
     private readonly logRepo: Repository<OperationLog>,
+    @InjectRepository(OrderPayment)
+    private readonly paymentRepo: Repository<OrderPayment>,
     private readonly ordersService: OrdersService,
   ) {}
 
@@ -1024,12 +1027,33 @@ export class ReportsService {
     );
 
     const methodMap = new Map<string, { name: string; count: number; amount: number }>();
+    const orderIds = completed.map((o) => o.id);
+    const paymentRows = orderIds.length
+      ? await this.paymentRepo.find({ where: { order_id: In(orderIds) } })
+      : [];
+    const paymentsByOrder = new Map<number, OrderPayment[]>();
+    for (const row of paymentRows) {
+      const list = paymentsByOrder.get(row.order_id) ?? [];
+      list.push(row);
+      paymentsByOrder.set(row.order_id, list);
+    }
     for (const o of completed) {
-      const name = o.payment_method_name || '未知';
-      const cur = methodMap.get(name) ?? { name, count: 0, amount: 0 };
-      cur.count += 1;
-      cur.amount += o.paid_amount;
-      methodMap.set(name, cur);
+      const rows = paymentsByOrder.get(o.id);
+      if (rows?.length) {
+        for (const row of rows) {
+          const name = row.payment_method_name || '未知';
+          const cur = methodMap.get(name) ?? { name, count: 0, amount: 0 };
+          cur.count += 1;
+          cur.amount += row.amount;
+          methodMap.set(name, cur);
+        }
+      } else {
+        const name = o.payment_method_name || '未知';
+        const cur = methodMap.get(name) ?? { name, count: 0, amount: 0 };
+        cur.count += 1;
+        cur.amount += o.paid_amount;
+        methodMap.set(name, cur);
+      }
     }
     const methods: MethodSummary[] = [...methodMap.values()].map((m) => ({
       name: m.name,

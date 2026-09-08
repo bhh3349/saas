@@ -4,6 +4,7 @@ import { Dish } from '../../entities/dish.entity';
 import { OperationLog } from '../../entities/operation-log.entity';
 import { Order } from '../../entities/order.entity';
 import { OrderRefund } from '../../entities/order-refund.entity';
+import { OrderPayment } from '../../entities/order-payment.entity';
 import { PaymentMethod } from '../../entities/payment-method.entity';
 import { Table } from '../../entities/table.entity';
 import { OrdersController } from './orders.controller';
@@ -11,7 +12,7 @@ import { OrdersService } from './orders.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, Dish, Table, PaymentMethod, OrderRefund, OperationLog]),
+    TypeOrmModule.forFeature([Order, Dish, Table, PaymentMethod, OrderRefund, OrderPayment, OperationLog]),
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

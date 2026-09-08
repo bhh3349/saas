@@ -728,6 +728,38 @@ async function main() {
     JSON.stringify(settleDiscount.body?.data),
   );
 
+  // 27. 混合支付：现金 + 微信叠加
+  const orderMixed = await api(SAAS_URL, 'POST', '/orders', {
+    token: tokenA,
+    body: { mode: 'ticket', items: [{ dish_id: dishId, spec_index: 0, qty: 1 }] },
+  });
+  const orderMixedId = orderMixed.body?.data?.id;
+  check('混合支付测试单创建（应收 33.5）', orderMixed.body?.code === 0 && orderMixed.body?.data?.total_amount === 33.5, JSON.stringify(orderMixed.body?.data));
+  const mixedSettle = await api(SAAS_URL, 'POST', `/orders/${orderMixedId}/settle`, {
+    token: tokenA,
+    body: {
+      payments: [
+        { payment_method_id: cashPay2.id, amount: 20 },
+        { payment_method_id: wechatPay.id, amount: 13.5 },
+      ],
+    },
+  });
+  check(
+    '混合支付结账（现金 20 + 微信 17.5）',
+    mixedSettle.body?.code === 0 &&
+    mixedSettle.body?.data?.paid_amount === 33.5 &&
+      mixedSettle.body?.data?.payment_method_name === '现金',
+    JSON.stringify(mixedSettle.body?.data),
+  );
+  const mixedToday = await api(SAAS_URL, 'GET', '/reports/today', { token: tokenFinance });
+  const mixedTodayData = mixedToday.body?.data;
+  check(
+    '混合支付报表拆行（现金 90.15 / 微信 39）',
+    mixedTodayData?.methods?.some((m) => m.name === '现金' && m.amount === 90.15 && m.order_count === 3) &&
+      mixedTodayData?.methods?.some((m) => m.name === '微信' && m.amount === 39 && m.order_count === 2),
+    JSON.stringify(mixedTodayData?.methods),
+  );
+
   // 必须先杀掉拉起服务的子进程，否则 npm run smoke 永不退出（stdio pipe 保持事件循环活跃）
   await stopStartedServices();
 
