@@ -103,6 +103,46 @@
         >
           <text class="quick-chip-text" :class="{ 'quick-chip-exact-text': discountPercent == d.value }">{{ d.label }}</text>
         </view>
+        <view
+          class="quick-chip"
+          :class="{ 'quick-chip-exact': discountPanelVisible }"
+          @click="toggleDiscountPanel"
+        >
+          <text class="quick-chip-text" :class="{ 'quick-chip-exact-text': discountPanelVisible }">自定义</text>
+        </view>
+      </view>
+      <view v-if="discountPanelVisible" class="discount-custom-panel">
+        <view class="discount-custom-row">
+          <text class="discount-custom-label">折扣率</text>
+          <input
+            class="discount-custom-input"
+            type="number"
+            v-model="customDiscountText"
+            placeholder="5.0-9.9"
+            :maxlength="3"
+          />
+          <text class="discount-custom-unit">折</text>
+        </view>
+        <view class="discount-custom-row">
+          <text class="discount-custom-label">原因</text>
+          <input
+            class="discount-custom-input"
+            type="text"
+            v-model="customDiscountReason"
+            placeholder="会员日"
+            :maxlength="12"
+          />
+        </view>
+        <view class="discount-custom-hint-row">
+          <text class="discount-custom-hint">{{ customDiscountHint }}</text>
+          <view
+            class="discount-custom-action"
+            :class="{ 'discount-custom-action-on': canApplyCustomDiscount }"
+            @click="applyCustomDiscount"
+          >
+            <text class="discount-custom-action-text" :class="{ 'discount-custom-action-text-on': canApplyCustomDiscount }">应用</text>
+          </view>
+        </view>
       </view>
       <view class="keypad">
         <view class="key" @click="pressKey('1')"><text class="key-text">1</text></view>
@@ -180,7 +220,10 @@
           { key: 'd80', label: '8折', value: 80 }
         ] as DiscountOption[],
         /** 当前选中折扣（0 = 无） */
-        discountPercent: 0
+        discountPercent: 0,
+        discountPanelVisible: false,
+        customDiscountText: '',
+        customDiscountReason: ''
       }
     },
     computed: {
@@ -199,12 +242,38 @@
       discountNameText(): string {
         const parts: string[] = []
         if (this.percentOffAmount > 0) {
-          parts.push('手动' + (this.discountPercent / 10) + '折')
+          parts.push(this.activeDiscountName)
         }
         if (this.manualDiscount > 0) {
           parts.push('抹零')
         }
         return parts.join('+')
+      },
+      customDiscountRate(): number {
+        return toNum(this.customDiscountText)
+      },
+      activeDiscountName(): string {
+        if (this.discountPercent % 10 == 0) {
+          return '手动' + (this.discountPercent / 10) + '折'
+        }
+        return '手动' + this.customDiscountSummary
+      },
+      customDiscountHint(): string {
+        if (this.customDiscountText.length == 0) return '请输入 5.0-9.9 折（一位小数）'
+        if (this.customDiscountRate <= 0) return '折扣率格式不正确'
+        const dotIndex = this.customDiscountText.indexOf('.')
+        if (dotIndex >= 0 && this.customDiscountText.length - dotIndex - 1 > 1) return '折扣率最多一位小数'
+        if (this.customDiscountRate < 50 || this.customDiscountRate > 99) return '折扣率需为 5.0-9.9 折'
+        return '原因最长 12 字，可留空'
+      },
+      canApplyCustomDiscount(): boolean {
+        const rate = this.customDiscountRate
+        const dotIndex = this.customDiscountText.indexOf('.')
+        const decimalValid = dotIndex < 0 || this.customDiscountText.length - dotIndex - 1 <= 1
+        return this.customDiscountText.length > 0 && decimalValid && rate >= 50 && rate <= 99
+      },
+      customDiscountSummary(): string {
+        return (this.discountPercent / 10).toFixed(1) + '折' + (this.customDiscountReason.length > 0 ? '·' + this.customDiscountReason : '')
       },
       payableAmount(): number {
         if (!this.order) return 0
@@ -362,6 +431,21 @@
       /** 整单折扣开关（再点一次取消） */
       toggleDiscount(p: number) {
         this.discountPercent = this.discountPercent == p ? 0 : p
+      },
+      toggleDiscountPanel() {
+        this.discountPanelVisible = !this.discountPanelVisible
+      },
+      applyCustomDiscount() {
+        if (!this.canApplyCustomDiscount) {
+          uni.showToast({ title: this.customDiscountHint, icon: 'none' })
+          return
+        }
+        const rate = this.customDiscountRate
+        const text = rate.toFixed(1)
+        this.customDiscountText = text
+        this.discountPercent = rate
+        this.discountPanelVisible = false
+        uni.showToast({ title: '已应用自定义折扣', icon: 'none' })
       },
       /**
        * 组装优惠参数：打折 + 抹零可叠加。
@@ -750,6 +834,79 @@
     font-size: 28rpx;
     color: #ff6a00;
     font-weight: bold;
+  }
+
+  .discount-custom-panel {
+    margin-top: 16rpx;
+    padding: 20rpx;
+    border-radius: 12rpx;
+    background-color: #f5f6f8;
+  }
+
+  .discount-custom-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 16rpx;
+  }
+
+  .discount-custom-label {
+    width: 120rpx;
+    font-size: 26rpx;
+    color: #333333;
+  }
+
+  .discount-custom-input {
+    flex: 1;
+    height: 64rpx;
+    padding: 0 20rpx;
+    border-radius: 10rpx;
+    background-color: #ffffff;
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .discount-custom-unit {
+    margin-left: 12rpx;
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .discount-custom-hint-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .discount-custom-hint {
+    flex: 1;
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  .discount-custom-action {
+    width: 120rpx;
+    height: 56rpx;
+    margin-left: 16rpx;
+    border-radius: 28rpx;
+    background-color: #dddddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .discount-custom-action-on {
+    background-color: #ff6a00;
+  }
+
+  .discount-custom-action-text {
+    font-size: 26rpx;
+    color: #666666;
+  }
+
+  .discount-custom-action-text-on {
+    color: #ffffff;
   }
 
   .keypad {
