@@ -248,7 +248,7 @@
 
 扫码进店 → 菜单点餐 → 购物车 → 下单 → 我的点单（加菜 / 催菜 / 查看状态）。点餐与接单模式由店铺配置决定。
 
-**本期预留**：商家端服务提供 `GET /public/shops/{shopId}/menu`、`POST /public/orders` 等公开接口设计（匿名访问、按店铺隔离、只读菜单），本期不开发界面。接口预留的完整设计已落档于 `output/saas-service/docs/scan-ordering-api.md`（由 Codex 撰写中）。
+**本期预留**：商家端服务提供 `GET /public/shops/{shopId}/menu`、`POST /public/orders` 等公开接口设计（匿名访问、按店铺隔离、只读菜单），本期不开发界面。接口预留的完整设计见 `output/saas-service/docs/scan-ordering-api.md`。
 
 ### 5.6 数据备份（后续排期）
 

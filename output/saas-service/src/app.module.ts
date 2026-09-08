@@ -35,6 +35,7 @@ import { TablesModule } from './modules/tables/tables.module';
 import { AreasModule } from './modules/areas/areas.module';
 import { DevicesModule } from './modules/devices/devices.module';
 import { PrintersModule } from './modules/printers/printers.module';
+import { PublicModule } from './modules/public/public.module';
 
 @Module({
   imports: [
@@ -66,6 +67,7 @@ import { PrintersModule } from './modules/printers/printers.module';
     InternalModule,
     DevicesModule,
     PrintersModule,
+    PublicModule,
   ],
   providers: [
     // 店铺停用全局拦截（解析 JWT → 本地快照 → disabled 403）

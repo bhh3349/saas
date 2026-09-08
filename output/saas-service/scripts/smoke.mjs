@@ -761,6 +761,28 @@ async function main() {
   );
 
   // 必须先杀掉拉起服务的子进程，否则 npm run smoke 永不退出（stdio pipe 保持事件循环活跃）
+  // 28. 扫码点餐公开接口预留：匿名只读菜单 + 非法店铺码 + 未开放端点
+  const publicShopCode = Number(userA?.shop_id || 0).toString(36);
+  const publicDish = await api(SAAS_URL, 'GET', '/dishes/menu', { token: tokenA });
+  const publicMenu = await api(SAAS_URL, 'GET', `/public/${publicShopCode}/menu`);
+  check(
+    '公开菜单匿名可读且字段白名单',
+    publicMenu.status === 200 &&
+      publicMenu.body?.data?.length > 0 &&
+      (publicMenu.body?.data || []).some((d) => (publicDish.body?.data || []).some((m) => m.name === d.name)) &&
+      !publicMenu.body?.data?.some((d) => 'id' in d || 'print_enable' in d),
+
+    JSON.stringify(publicMenu.body?.data),
+  );
+
+  const invalidPublicMenu = await api(SAAS_URL, 'GET', '/public/zzzzzzzzzz/menu');
+  check('非法 shopCode 返回 404', invalidPublicMenu.status === 404, `status=${invalidPublicMenu.status}`);
+
+  const reservedPublicOrder = await api(SAAS_URL, 'POST', `/public/${publicShopCode}/orders`, {
+    body: { tableCode: 'A1', items: [] },
+  });
+  check('预留下单端点返回 501', reservedPublicOrder.status === 501, `status=${reservedPublicOrder.status}`);
+
   await stopStartedServices();
 
   console.log('\n=== 结果 ===');
@@ -788,4 +810,5 @@ process.on('exit', () => {
   for (const child of started) {
     try { child.kill(); } catch { /* ignore */ }
   }
+
 });
