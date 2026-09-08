@@ -47,53 +47,17 @@
       </view>
     </view>
 
-    <!-- 支付方式 -->
-    <view class="pay-section">
-      <text class="pay-title">请选择支付方式</text>
-      <view class="pay-list">
-        <view
-          v-for="p in payments"
-          :key="p.id"
-          class="pay-item"
-          :class="selectedPay == p.id ? 'pay-item-on' : ''"
-          @click="selectedPay = p.id"
-        >
-          <text class="pay-icon">{{ p.icon ?? '' }}</text>
-          <text class="pay-name">{{ p.name }}</text>
-          <view class="pay-check" v-if="selectedPay == p.id">
-            <text class="pay-check-icon">✓</text>
-          </view>
-        </view>
-      </view>
-    </view>
-
-    <!-- 收银键盘：实收金额 + 快捷面额 + 找零 -->
-    <view class="cash-section">
-      <view class="cash-input-row">
-        <text class="cash-input-label">实收（元）</text>
-        <view class="cash-input-box">
-          <text class="cash-input-value">{{ paidDisplay }}</text>
-        </view>
-      </view>
-      <view class="cash-change-row">
-        <text v-if="paidInput.length > 0 && paidAmount < payableAmount" class="cash-change-warn">实收小于应收，不能结账</text>
-        <text v-else-if="changeAmount > 0" class="cash-change-ok">找零 ¥{{ changeAmount.toFixed(2) }}</text>
-        <text v-else class="cash-change-hint">应收 ¥{{ payableAmount.toFixed(2) }}，未输入实收时按应收结账</text>
+    <!-- 整单优惠：抹零 / 快捷折扣 / 自定义 -->
+    <view class="opt-card">
+      <view class="card-title-row">
+        <text class="card-title">整单优惠</text>
+        <text v-if="discountAmount > 0" class="card-title-sub">已优惠 -¥{{ discountAmount.toFixed(2) }}</text>
       </view>
       <view class="quick-row">
-        <view v-for="v in quickAmounts" :key="v" class="quick-chip" @click="setQuick(v)">
-          <text class="quick-chip-text">¥{{ v }}</text>
-        </view>
-        <view class="quick-chip quick-chip-exact" @click="clearPaid">
-          <text class="quick-chip-exact-text">刚好</text>
-        </view>
         <view class="quick-chip" :class="{ 'quick-chip-exact': manualDiscount > 0 }" @click="toggleMolin">
           <text v-if="manualDiscount > 0" class="quick-chip-exact-text">已抹零</text>
           <text v-else class="quick-chip-text">抹零</text>
         </view>
-      </view>
-      <view class="quick-row">
-        <text class="quick-row-label">整单折扣</text>
         <view
           v-for="d in discountOptions"
           :key="d.key"
@@ -144,31 +108,134 @@
           </view>
         </view>
       </view>
-      <view class="keypad">
-        <view class="key" @click="pressKey('1')"><text class="key-text">1</text></view>
-        <view class="key" @click="pressKey('2')"><text class="key-text">2</text></view>
-        <view class="key" @click="pressKey('3')"><text class="key-text">3</text></view>
-        <view class="key key-func" @click="pressBackspace"><text class="key-func-text">⌫</text></view>
-        <view class="key" @click="pressKey('4')"><text class="key-text">4</text></view>
-        <view class="key" @click="pressKey('5')"><text class="key-text">5</text></view>
-        <view class="key" @click="pressKey('6')"><text class="key-text">6</text></view>
-        <view class="key key-func" @click="clearPaid"><text class="key-func-text">清空</text></view>
-        <view class="key" @click="pressKey('7')"><text class="key-text">7</text></view>
-        <view class="key" @click="pressKey('8')"><text class="key-text">8</text></view>
-        <view class="key" @click="pressKey('9')"><text class="key-text">9</text></view>
-        <view class="key key-func" @click="pressKey('.')"><text class="key-func-text">.</text></view>
-        <view class="key" @click="pressKey('0')"><text class="key-text">0</text></view>
-        <view class="key" @click="pressKey('00')"><text class="key-text">00</text></view>
+    </view>
+
+    <!-- 拆分支付：多支付方式叠加 -->
+    <view class="opt-card">
+      <view class="card-title-row">
+        <text class="card-title">拆分支付</text>
+        <text class="card-title-sub">多种支付方式组合收款</text>
+      </view>
+
+      <view v-for="row in splitRows" :key="row.key" class="split-row">
+        <view class="split-method" @click="openMethodPanel(row)">
+          <text class="split-method-icon">{{ methodIcon(row.methodId) }}</text>
+          <text class="split-method-name">{{ methodName(row.methodId) }}</text>
+          <text class="split-method-arrow">▾</text>
+        </view>
+        <view class="split-amount" :class="{ 'split-amount-auto': row.amount == null }" @click="openAmountPanel(row)">
+          <text class="split-amount-text" :class="{ 'split-amount-text-auto': row.amount == null }">{{ rowAmountText(row) }}</text>
+        </view>
+        <view v-if="splitRows.length > 1" class="split-del" @click="removeRow(row.key)">
+          <text class="split-del-text">✕</text>
+        </view>
+      </view>
+
+      <view class="split-add-wrap">
+        <view class="split-add" :class="{ 'split-add-disabled': !canAddRow }" @click="addRow">
+          <text class="split-add-text">+ 添加支付方式</text>
+        </view>
+      </view>
+
+      <!-- 实时收款汇总 -->
+      <view class="split-summary">
+        <view class="split-sum-col">
+          <text class="split-sum-label">已收合计</text>
+          <text class="split-sum-value">¥{{ receivedAmount.toFixed(2) }}</text>
+        </view>
+        <view v-if="unpaidAmount > 0" class="split-sum-col split-sum-warn">
+          <text class="split-sum-label">未收（补足才能结账）</text>
+          <text class="split-sum-value split-sum-warn-value">¥{{ unpaidAmount.toFixed(2) }}</text>
+        </view>
+        <view v-else-if="changeAmount > 0" class="split-sum-col split-sum-ok">
+          <text class="split-sum-label">找零</text>
+          <text class="split-sum-value split-sum-ok-value">¥{{ changeAmount.toFixed(2) }}</text>
+        </view>
+        <view v-else class="split-sum-col split-sum-ok">
+          <text class="split-sum-label">状态</text>
+          <text class="split-sum-value split-sum-ok-value">已收齐</text>
+        </view>
       </view>
     </view>
     </scroll-view>
 
+    <!-- 金额输入面板 -->
+    <view v-if="amountPanelShow" class="picker-mask" @click="closeAmountPanel">
+      <view class="picker-panel" @click.stop="">
+        <view class="panel-title-row">
+          <text class="panel-title">{{ amountRow != null ? methodName(amountRow.methodId) : '' }} 收款金额</text>
+          <text class="panel-sub">应收 ¥{{ payableAmount.toFixed(2) }}</text>
+        </view>
+        <view class="amt-display-row">
+          <text class="amt-display">{{ amtInput.length > 0 ? amtInput : '0.00' }}</text>
+        </view>
+        <view v-if="amountRemain > 0" class="amt-remain-hint">
+          <text class="amt-remain-text">还可收 ¥{{ amountRemain.toFixed(2) }} 即结清</text>
+        </view>
+        <view v-else class="amt-remain-hint">
+          <text class="amt-remain-text amt-remain-warn">已超过应收，会计算找零</text>
+        </view>
+        <view class="amt-quick-row">
+          <view v-for="v in quickAmounts" :key="v" class="quick-chip quick-chip-small" @click="amtQuick(v)">
+            <text class="quick-chip-text">¥{{ v }}</text>
+          </view>
+          <view class="quick-chip quick-chip-small quick-chip-exact" :class="{ 'quick-chip-disabled': !canAmtJust }" @click="amtJust">
+            <text class="quick-chip-exact-text">刚好</text>
+          </view>
+        </view>
+        <view class="amt-keypad">
+          <view class="key" @click="pressAmtKey('1')"><text class="key-text">1</text></view>
+          <view class="key" @click="pressAmtKey('2')"><text class="key-text">2</text></view>
+          <view class="key" @click="pressAmtKey('3')"><text class="key-text">3</text></view>
+          <view class="key key-func" @click="pressAmtBackspace"><text class="key-func-text">⌫</text></view>
+          <view class="key" @click="pressAmtKey('4')"><text class="key-text">4</text></view>
+          <view class="key" @click="pressAmtKey('5')"><text class="key-text">5</text></view>
+          <view class="key" @click="pressAmtKey('6')"><text class="key-text">6</text></view>
+          <view class="key key-func" @click="clearAmt"><text class="key-func-text">清空</text></view>
+          <view class="key" @click="pressAmtKey('7')"><text class="key-text">7</text></view>
+          <view class="key" @click="pressAmtKey('8')"><text class="key-text">8</text></view>
+          <view class="key" @click="pressAmtKey('9')"><text class="key-text">9</text></view>
+          <view class="key key-func" @click="closeAmountPanel"><text class="key-func-text">取消</text></view>
+          <view class="key key-func" @click="pressAmtKey('.')"><text class="key-func-text">.</text></view>
+          <view class="key" @click="pressAmtKey('0')"><text class="key-text">0</text></view>
+          <view class="key" @click="pressAmtKey('00')"><text class="key-text">00</text></view>
+          <view class="key key-confirm" @click="confirmAmount"><text class="key-confirm-text">确认</text></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 支付方式选择面板 -->
+    <view v-if="methodPanelShow" class="picker-mask" @click="closeMethodPanel">
+      <view class="picker-panel" @click.stop="">
+        <view class="panel-title-row">
+          <text class="panel-title">选择支付方式</text>
+        </view>
+        <view
+          v-for="p in payments"
+          :key="p.id"
+          class="method-opt"
+          :class="{ 'method-opt-on': methodRow != null && methodRow.methodId == p.id }"
+          @click="pickMethod(p.id)"
+        >
+          <text class="method-opt-icon">{{ p.icon ?? '' }}</text>
+          <text class="method-opt-name">{{ p.name }}</text>
+          <view v-if="methodRow != null && methodRow.methodId == p.id" class="method-opt-check">
+            <text class="method-opt-check-icon">✓</text>
+          </view>
+        </view>
+        <view class="picker-close" @click="closeMethodPanel">
+          <text class="picker-close-text">取消</text>
+        </view>
+      </view>
+    </view>
+
     <!-- 底部支付栏 -->
     <view class="pay-bar">
       <view class="pay-bar-left">
-        <text class="pay-bar-label">实收</text>
-        <text class="pay-bar-amount">¥{{ paidAmount.toFixed(2) }}</text>
+        <text class="pay-bar-label">已收</text>
+        <text class="pay-bar-amount">¥{{ receivedAmount.toFixed(2) }}</text>
         <text v-if="changeAmount > 0" class="pay-bar-change">找零 ¥{{ changeAmount.toFixed(2) }}</text>
+        <text v-else-if="unpaidAmount > 0" class="pay-bar-unpaid">未收 ¥{{ unpaidAmount.toFixed(2) }}</text>
       </view>
       <view class="pay-btn" :class="{ 'pay-btn-disabled': !canPay || paying }" @click="doSettle">
         <text class="pay-btn-text">{{ paying ? '处理中...' : '确认支付' }}</text>
@@ -178,7 +245,7 @@
 </template>
 
 <script>
-  import { fetchOrderDetail, settleOrder, type OrderItem, type SettleOrderDto } from '../../api/orders.uts'
+  import { fetchOrderDetail, settleOrder, type OrderItem, type SettleOrderDto, type SettlePaymentLine } from '../../api/orders.uts'
   import { toNum } from '../../utils/num.uts'
   import { fetchPayments, type PaymentMethod } from '../../api/payments.uts'
   import { printReceipt, getDefaultPrinter } from '../../utils/print-manager.uts'
@@ -189,6 +256,14 @@
     amount: number
     type: string
     name: string
+  }
+
+  /** 拆分支付行：单行 = 一种支付方式的实收金额 */
+  type SplitPayRow = {
+    key: number
+    methodId: number
+    /** null = 自动补差（应收剩余由该行收齐，仅允许一行）；否则为该行实收金额（元） */
+    amount: number | null
   }
 
   /** 整单折扣选项 */
@@ -205,12 +280,19 @@
         orderId: 0,
         order: null as OrderItem | null,
         payments: [] as PaymentMethod[],
-        selectedPay: 0,
         paying: false,
+        /** 拆分支付行（默认一行自动补差 = 按应收整笔） */
+        splitRows: [] as SplitPayRow[],
+        rowKeySeq: 1,
+        /** 金额输入面板 */
+        amountPanelShow: false,
+        amountRow: null as SplitPayRow | null,
+        amtInput: '',
+        /** 支付方式选择面板 */
+        methodPanelShow: false,
+        methodRow: null as SplitPayRow | null,
         /** 手动输入优惠金额（抹零等） */
         manualDiscount: 0,
-        /** 实收金额输入（键盘输入的字符串；空 = 按应收结账） */
-        paidInput: '',
         /** 快捷面额按钮 */
         quickAmounts: [10, 20, 50, 100],
         /** 整单折扣选项（百分比，90 = 9折） */
@@ -280,27 +362,93 @@
         const amt = this.order.total_amount - this.discountAmount
         return amt > 0 ? amt : 0
       },
-      /** 实收展示：未输入时按应收 */
-      paidDisplay(): string {
-        return this.paidInput.length > 0 ? this.paidInput : this.payableAmount.toFixed(2)
-      },
-      paidAmount(): number {
-        if (this.paidInput.length == 0) {
-          return this.payableAmount
+      /** 各支付行已填实收合计（不含自动行） */
+      concreteReceived(): number {
+        let s = 0
+        const rows = this.splitRows
+        for (let i = 0; i < rows.length; i++) {
+          const a = rows[i].amount
+          if (a != null) s += a
         }
-        const v = toNum(this.paidInput)
-        if (isNaN(v) || v < 0) {
-          return 0
-        }
-        return v
+        return Math.round(s * 100) / 100
       },
-      /** 找零 = 实收 - 应收（实收大于应收时） */
+      /** 是否存在自动补差行（amount == null：自动吃剩余差额） */
+      hasAutoRow(): boolean {
+        const rows = this.splitRows
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].amount == null) return true
+        }
+        return false
+      },
+      /** 是否存在待输入行（amount == 0：刚添加未填金额） */
+      hasPendingRow(): boolean {
+        const rows = this.splitRows
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].amount != null && rows[i].amount == 0) return true
+        }
+        return false
+      },
+      /**
+       * 自动行应收差额：应收 - 已填合计。
+       * 自动行唯一（<=1 个 null），差额为其应收金额；超收/被填满时 0。
+       */
+      autoFillAmount(): number {
+        if (!this.hasAutoRow) return 0
+        const d = this.payableAmount - this.concreteReceived
+        return d > 0 ? Math.round(d * 100) / 100 : 0
+      },
+      /** 已收合计 = 已填金额 + 自动行补差 */
+      receivedAmount(): number {
+        const s = this.concreteReceived + this.autoFillAmount
+        return Math.round(s * 100) / 100
+      },
+      /** 未收余额（应收 - 已收，收满为 0） */
+      unpaidAmount(): number {
+        const u = this.payableAmount - this.receivedAmount
+        return u > 0 ? u : 0
+      },
+      /** 找零 = 已收 - 应收（已收大于应收时） */
       changeAmount(): number {
-        const c = this.paidAmount - this.payableAmount
+        const c = this.receivedAmount - this.payableAmount
         return c > 0 ? c : 0
       },
+      /** 除当前金额面板所在行外，其余已填金额合计（自动行不计，因可被「刚好」覆盖） */
+      othersExclRow(): number {
+        if (this.amountRow == null) return this.concreteReceived
+        let s = 0
+        const rows = this.splitRows
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i]
+          if (r.key == this.amountRow.key) continue
+          const a = r.amount
+          if (a != null && a > 0) s += a
+        }
+        return Math.round(s * 100) / 100
+      },
+      /** 金额面板提示：本行还可收多少即结清 */
+      amountRemain(): number {
+        const remain = this.payableAmount - this.othersExclRow
+        return Math.round(remain * 100) / 100
+      },
+      canAmtJust(): boolean {
+        return this.amountRemain > 0
+      },
+      canAddRow(): boolean {
+        return this.order != null && this.payments.length > 1 && this.splitRows.length < 6
+      },
       canPay(): boolean {
-        return this.order != null && this.payments.length > 0 && this.selectedPay > 0 && this.paidAmount >= this.payableAmount
+        if (this.order == null || this.payments.length == 0 || this.paying) return false
+        const rows = this.splitRows
+        if (rows.length == 0) return false
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].methodId <= 0) return false
+          const a = rows[i].amount
+          // 待输入行（0）不能结账
+          if (a != null && a <= 0) return false
+        }
+        // 自动行仅在还有差额时有效；其余行已收满应收时自动行等于 0 无意义
+        if (this.hasAutoRow && this.payableAmount > 0 && this.concreteReceived >= this.payableAmount) return false
+        return this.unpaidAmount <= 0
       }
     },
     onLoad(options: OnLoadOptions) {
@@ -317,8 +465,14 @@
         try {
           this.order = await fetchOrderDetail(this.orderId)
           this.payments = await fetchPayments()
-          if (this.payments.length > 0) {
-            this.selectedPay = this.payments[0].id
+          // 默认一行：当前店铺首个启用支付方式 + 自动补差（= 整笔按应收结算）
+          if (this.splitRows.length == 0 && this.payments.length > 0) {
+            const row: SplitPayRow = {
+              key: this.rowKeySeq++,
+              methodId: this.payments[0].id,
+              amount: null,
+            } as SplitPayRow
+            this.splitRows.push(row)
           }
         } catch (e) {
           uni.showToast({ title: (e.message as string) ?? '', icon: 'none' })
@@ -369,50 +523,157 @@
       goBack() {
         uni.navigateBack()
       },
-      /** 数字键盘：追加字符（最多一位小数点、两位小数） */
-      pressKey(k: string) {
+      /* ---------- 拆分支付行操作 ---------- */
+
+      /** 行展示名：找支付方式 */
+      methodName(id: number): string {
+        const ps = this.payments
+        for (let i = 0; i < ps.length; i++) {
+          if (ps[i].id == id) return ps[i].name
+        }
+        return ''
+      },
+      methodIcon(id: number): string {
+        const ps = this.payments
+        for (let i = 0; i < ps.length; i++) {
+          if (ps[i].id == id) return (ps[i].icon ?? '').toString()
+        }
+        return ''
+      },
+      /** 行金额展示：null = 自动吃剩余差额；0 = 待输入；>0 = 具体金额 */
+      rowAmountText(row: SplitPayRow): string {
+        if (row.amount == null) {
+          if (this.payableAmount <= 0) return '¥0.00'
+          return '自动 ¥' + this.autoFillAmount.toFixed(2)
+        }
+        if (row.amount == 0) return '输入金额'
+        return '¥' + row.amount.toFixed(2)
+      },
+      /**
+       * 添加一行：
+       * - 尚无自动行 → 新行 amount=null（自动吃剩余差额），无需填金额
+       * - 已有自动行 → 新行 amount=0（待输入），立刻弹出金额面板强制录入；取消则移除
+       */
+      addRow() {
+        if (!this.canAddRow) {
+          if (this.payments.length <= 1) {
+            uni.showToast({ title: '仅一种支付方式，无需拆分', icon: 'none' })
+          }
+          return
+        }
+        const row: SplitPayRow = {
+          key: this.rowKeySeq++,
+          methodId: this.payments[0].id,
+          amount: this.hasAutoRow ? 0 : null,
+        } as SplitPayRow
+        this.splitRows.push(row)
+        if (row.amount == 0) {
+          this.openAmountPanel(row)
+        }
+      },
+      /** 删除一行（只剩一行时不可删） */
+      removeRow(key: number) {
+        if (this.splitRows.length <= 1) return
+        // 关闭可能指向被删行的面板
+        if (this.amountRow != null && this.amountRow.key == key) this.closeAmountPanel()
+        if (this.methodRow != null && this.methodRow.key == key) this.closeMethodPanel()
+        for (let i = 0; i < this.splitRows.length; i++) {
+          if (this.splitRows[i].key == key) {
+            this.splitRows.splice(i, 1)
+            break
+          }
+        }
+      },
+      /** 打开支付方式选择面板（行下拉） */
+      openMethodPanel(row: SplitPayRow) {
+        this.methodRow = row
+        this.methodPanelShow = true
+      },
+      pickMethod(id: number) {
+        if (this.methodRow == null) return
+        this.methodRow.methodId = id
+        this.closeMethodPanel()
+      },
+      closeMethodPanel() {
+        this.methodPanelShow = false
+        this.methodRow = null
+      },
+      /** 点行金额区：打开金额输入面板（task-t13 同款遮罩 + 数字键盘） */
+      openAmountPanel(row: SplitPayRow) {
+        this.amountRow = row
+        const a = row.amount
+        this.amtInput = a == null || a == 0 ? '' : a.toString()
+        this.amountPanelShow = true
+      },
+      closeAmountPanel() {
+        const row = this.amountRow
+        this.amountPanelShow = false
+        this.amountRow = null
+        this.amtInput = ''
+        // 取消且该行仍是「待输入(0)」→ 撤掉刚添加的空行（自动行 null 除外）
+        if (row != null && row.amount != null && row.amount == 0 && this.splitRows.length > 1) {
+          for (let i = 0; i < this.splitRows.length; i++) {
+            if (this.splitRows[i].key == row.key) {
+              this.splitRows.splice(i, 1)
+              break
+            }
+          }
+        }
+      },
+      /** 金额键盘：追加字符（最多两位小数，长度保护） */
+      pressAmtKey(k: string) {
+        let cur = this.amtInput
+        if (cur == '' && (k == '0' || k == '00')) {
+          this.amtInput = '0'
+          return
+        }
+        if (cur.length == 0 && k == '.') {
+          this.amtInput = '0.'
+          return
+        }
         if (k == '.') {
-          if (this.paidInput.indexOf('.') >= 0) return
-          // 空输入时点小数点，补前导 0
-          if (this.paidInput.length == 0) {
-            this.paidInput = '0.'
-            return
-          }
-          this.paidInput = this.paidInput + '.'
+          if (cur.indexOf('.') >= 0) return
+          this.amtInput = cur + '.'
           return
         }
-        // 小数位已满两位则不再追加
-        const dotIdx = this.paidInput.indexOf('.')
-        if (dotIdx >= 0 && this.paidInput.length - dotIdx - 1 >= 2) {
+        const dotIdx = cur.indexOf('.')
+        if (dotIdx >= 0 && cur.length - dotIdx - 1 >= 2) return
+        if (cur.length >= 8) return
+        // 已有 0 且无小数点时数字替换前导 0
+        if (cur == '0') {
+          this.amtInput = k
           return
         }
-        // 长度保护（含 00 键），避免异常长输入
-        if (this.paidInput.length >= 8) {
-          return
-        }
-        // 前导 0：已有 0 且无小数点时，数字替换 0（00 键同理不叠加）
-        if (this.paidInput == '0') {
-          if (k == '0' || k == '00') {
-            return
-          }
-          this.paidInput = k
-          return
-        }
-        this.paidInput = this.paidInput + k
+        this.amtInput = cur + k
       },
-      /** 退格：删掉末位字符 */
-      pressBackspace() {
-        if (this.paidInput.length > 0) {
-          this.paidInput = this.paidInput.substring(0, this.paidInput.length - 1)
+      pressAmtBackspace() {
+        if (this.amtInput.length > 0) {
+          this.amtInput = this.amtInput.substring(0, this.amtInput.length - 1)
         }
       },
-      /** 清空实收（回到按应收结账） */
-      clearPaid() {
-        this.paidInput = ''
+      clearAmt() {
+        this.amtInput = ''
       },
-      /** 快捷面额：直接填入整额 */
-      setQuick(v: number) {
-        this.paidInput = v.toString()
+      /** 快捷面额（面板内）：直接填入，超收找零由汇总实时提示 */
+      amtQuick(v: number) {
+        this.amtInput = v.toString()
+      },
+      /** 「刚好」：本行收剩余应收差额，结清 */
+      amtJust() {
+        if (!this.canAmtJust) return
+        const rem = this.amountRemain
+        this.amtInput = rem.toString()
+      },
+      /** 确认金额：>0、不超应收太多；写入该行；可选把该行转为自动补差？——不，直接写金额 */
+      confirmAmount() {
+        if (this.amountRow == null) return
+        const v = toNum(this.amtInput)
+        if (this.amtInput.length == 0 || v <= 0) {
+          uni.showToast({ title: '金额需大于 0', icon: 'none' })
+          return
+        }
+        this.amountRow.amount = Math.round(v * 100) / 100
+        this.closeAmountPanel()
       },
       /** 抹零开关：抹至整数元（去掉角分）；再点一次取消 */
       toggleMolin() {
@@ -463,8 +724,14 @@
       },
       async doSettle() {
         if (!this.canPay) {
-          if (this.paidAmount < this.payableAmount) {
-            uni.showToast({ title: '实收不能小于应收', icon: 'none' })
+          if (this.hasPendingRow) {
+            uni.showToast({ title: '请为每行填写收款金额', icon: 'none' })
+          } else if (this.unpaidAmount > 0) {
+            uni.showToast({ title: '还有未收 ¥' + this.unpaidAmount.toFixed(2) + '，请补足', icon: 'none' })
+          } else if (this.hasAutoRow && this.payableAmount > 0 && this.concreteReceived >= this.payableAmount) {
+            uni.showToast({ title: '自动补差行已无差额，请删除或改金额', icon: 'none' })
+          } else {
+            uni.showToast({ title: '当前不可结账', icon: 'none' })
           }
           return
         }
@@ -472,14 +739,34 @@
         this.paying = true
         try {
           const df = this.buildDiscountFields()
-          const dto: SettleOrderDto = {
-            payment_method_id: this.selectedPay,
-            paid_amount: this.paidAmount,
-          }
+          const dto: SettleOrderDto = {} as SettleOrderDto
           if (df != null) {
             dto.discount_amount = df.amount
             dto.discount_type = df.type
             dto.discount_name = df.name
+          }
+          // 单行 → 走旧单支付字段（兼容，不含 payments）；多行 → payments 拆分
+          if (this.splitRows.length <= 1) {
+            const row = this.splitRows[0]
+            dto.payment_method_id = row.methodId
+            dto.paid_amount = row.amount == null ? this.payableAmount : row.amount
+          } else {
+            const lines: SettlePaymentLine[] = []
+            const rows = this.splitRows
+            for (let i = 0; i < rows.length; i++) {
+              const row = rows[i]
+              let amt = row.amount
+              if (amt == null) amt = this.autoFillAmount
+              if (amt > 0) {
+                const line: SettlePaymentLine = {
+                  payment_method_id: row.methodId,
+                  amount: amt,
+                } as SettlePaymentLine
+                lines.push(line)
+              }
+            }
+            dto.payments = lines
+            dto.paid_amount = this.receivedAmount
           }
           const settle = await settleOrder(this.orderId, dto)
 
@@ -674,127 +961,181 @@
     color: #ff6a00;
   }
 
-  /* 支付方式 */
-  .pay-section {
+  /* 整单优惠 / 拆分支付 卡片 */
+  .opt-card {
     margin: 16rpx 24rpx;
     background-color: #ffffff;
     border-radius: 16rpx;
     padding: 24rpx;
   }
 
-  .pay-title {
-    font-size: 30rpx;
-    font-weight: bold;
-    color: #333333;
-    margin-bottom: 20rpx;
-  }
-
-  .pay-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .pay-item {
+  .card-title-row {
     display: flex;
     flex-direction: row;
     align-items: center;
-    padding: 24rpx 16rpx;
+    justify-content: space-between;
+  }
+
+  .card-title {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .card-title-sub {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  /* 拆分支付行 */
+  .split-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    margin-top: 20rpx;
+  }
+
+  .split-method {
+    flex: 1;
+    height: 80rpx;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 20rpx;
+    margin-right: 12rpx;
+    background-color: #f5f6f8;
     border-radius: 12rpx;
-    border-width: 2rpx;
-    border-style: solid;
-    border-color: transparent;
   }
 
-  .pay-item-on {
-    border-color: #ff6a00;
-    background-color: #fff8f0;
+  .split-method-icon {
+    font-size: 32rpx;
+    margin-right: 12rpx;
   }
 
-  .pay-icon {
-    font-size: 40rpx;
-    margin-right: 16rpx;
-  }
-
-  .pay-name {
+  .split-method-name {
     flex: 1;
     font-size: 28rpx;
     color: #333333;
   }
 
-  .pay-check {
-    width: 36rpx;
-    height: 36rpx;
-    border-radius: 50%;
-    background-color: #ff6a00;
+  .split-method-arrow {
+    font-size: 24rpx;
+    color: #999999;
+    margin-left: 8rpx;
+  }
+
+  .split-amount {
+    min-width: 200rpx;
+    height: 80rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 20rpx;
+    background-color: #fff4ec;
+    border-radius: 12rpx;
+  }
+
+  .split-amount-auto {
+    background-color: #fff8f0;
+  }
+
+  .split-amount-text {
+    font-size: 28rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .split-amount-text-auto {
+    color: #ff6a00;
+  }
+
+  .split-del {
+    width: 64rpx;
+    height: 80rpx;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
-  .pay-check-icon {
-    font-size: 24rpx;
-    color: #ffffff;
+  .split-del-text {
+    font-size: 30rpx;
+    color: #cccccc;
   }
 
-  /* 收银键盘 */
-  .cash-section {
-    margin: 16rpx 24rpx;
-    background-color: #ffffff;
-    border-radius: 16rpx;
-    padding: 24rpx;
-  }
-
-  .cash-input-row {
+  .split-add-wrap {
+    margin-top: 20rpx;
     display: flex;
     flex-direction: row;
-    align-items: center;
   }
 
-  .cash-input-label {
-    font-size: 28rpx;
-    color: #333333;
-    width: 180rpx;
-  }
-
-  .cash-input-box {
+  .split-add {
     flex: 1;
-    height: 88rpx;
-    background-color: #f5f6f8;
+    height: 72rpx;
     border-radius: 12rpx;
+    background-color: #fff4ec;
+    border-width: 1rpx;
+    border-style: solid;
+    border-color: #ffb98a;
     display: flex;
-    flex-direction: row;
     align-items: center;
-    justify-content: flex-end;
-    padding: 0 24rpx;
+    justify-content: center;
   }
 
-  .cash-input-value {
-    font-size: 40rpx;
+  .split-add-disabled {
+    opacity: 0.5;
+  }
+
+  .split-add-text {
+    font-size: 28rpx;
     font-weight: bold;
-    color: #333333;
+    color: #ff6a00;
   }
 
-  .cash-change-row {
-    margin-top: 12rpx;
+  /* 实时收款汇总 */
+  .split-summary {
+    margin-top: 24rpx;
+    padding-top: 20rpx;
+    border-top-width: 1rpx;
+    border-top-style: solid;
+    border-top-color: #f0f0f0;
     display: flex;
     flex-direction: row;
-    justify-content: flex-end;
+    align-items: flex-end;
+    justify-content: space-between;
   }
 
-  .cash-change-hint {
+  .split-sum-col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .split-sum-warn {
+    align-items: flex-end;
+  }
+
+  .split-sum-ok {
+    align-items: flex-end;
+  }
+
+  .split-sum-label {
     font-size: 24rpx;
     color: #999999;
   }
 
-  .cash-change-ok {
-    font-size: 28rpx;
+  .split-sum-value {
+    font-size: 40rpx;
     font-weight: bold;
-    color: #52c41a;
+    color: #333333;
+    margin-top: 4rpx;
   }
 
-  .cash-change-warn {
-    font-size: 24rpx;
-    color: #f5222d;
+  .split-sum-warn-value {
+    color: #ff6a00;
+  }
+
+  .split-sum-ok-value {
+    color: #52c41a;
   }
 
   .quick-row {
@@ -803,12 +1144,6 @@
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
-  }
-
-  .quick-row-label {
-    font-size: 24rpx;
-    color: #999999;
-    width: 106rpx;
   }
 
   .quick-chip {
@@ -909,8 +1244,8 @@
     color: #ffffff;
   }
 
-  .keypad {
-    margin-top: 16rpx;
+  .amt-keypad {
+    margin-top: 20rpx;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
@@ -999,5 +1334,169 @@
     font-size: 30rpx;
     color: #ffffff;
     font-weight: bold;
+  }
+
+  .pay-bar-unpaid {
+    font-size: 26rpx;
+    color: #ff6a00;
+    margin-left: 16rpx;
+  }
+
+  /* 底部弹出遮罩面板（与 cart 数量直输同款） */
+  .picker-mask {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+
+  .picker-panel {
+    width: 100%;
+    background-color: #ffffff;
+    border-top-left-radius: 24rpx;
+    border-top-right-radius: 24rpx;
+    padding: 24rpx 24rpx 40rpx;
+  }
+
+  .panel-title-row {
+    padding: 12rpx 0 16rpx;
+    border-bottom-width: 1rpx;
+    border-bottom-style: solid;
+    border-bottom-color: #f0f0f0;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel-title {
+    font-size: 30rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .panel-sub {
+    font-size: 24rpx;
+    color: #999999;
+  }
+
+  /* 金额展示与提示 */
+  .amt-display-row {
+    margin-top: 20rpx;
+    height: 88rpx;
+    background-color: #f5f6f8;
+    border-radius: 12rpx;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 24rpx;
+  }
+
+  .amt-display {
+    font-size: 44rpx;
+    font-weight: bold;
+    color: #333333;
+  }
+
+  .amt-remain-hint {
+    margin-top: 12rpx;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .amt-remain-text {
+    font-size: 24rpx;
+    color: #52c41a;
+  }
+
+  .amt-remain-warn {
+    color: #f5222d;
+  }
+
+  .amt-quick-row {
+    margin-top: 16rpx;
+    display: flex;
+    flex-direction: row;
+  }
+
+  .amt-quick-row .quick-chip {
+    margin-right: 12rpx;
+  }
+
+  .quick-chip-disabled {
+    opacity: 0.4;
+  }
+
+  .key-confirm {
+    background-color: #ff6a00;
+  }
+
+  .key-confirm-text {
+    font-size: 32rpx;
+    font-weight: bold;
+    color: #ffffff;
+  }
+
+  /* 支付方式选择面板 */
+  .method-opt {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 24rpx 16rpx;
+    margin-top: 8rpx;
+    border-radius: 12rpx;
+    border-width: 2rpx;
+    border-style: solid;
+    border-color: transparent;
+  }
+
+  .method-opt-on {
+    border-color: #ff6a00;
+    background-color: #fff8f0;
+  }
+
+  .method-opt-icon {
+    font-size: 36rpx;
+    margin-right: 16rpx;
+  }
+
+  .method-opt-name {
+    flex: 1;
+    font-size: 28rpx;
+    color: #333333;
+  }
+
+  .method-opt-check {
+    width: 36rpx;
+    height: 36rpx;
+    border-radius: 50%;
+    background-color: #ff6a00;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .method-opt-check-icon {
+    font-size: 24rpx;
+    color: #ffffff;
+  }
+
+  .picker-close {
+    margin-top: 16rpx;
+    padding: 24rpx;
+    background-color: #f5f5f5;
+    border-radius: 12rpx;
+    text-align: center;
+  }
+
+  .picker-close-text {
+    font-size: 28rpx;
+    color: #666666;
   }
 </style>
